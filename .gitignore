@@ -1,0 +1,87 @@
+# Python
+*.py[cod]
+
+# Conda
+.conda
+
+# C extensions
+*.so
+var
+sdist
+lib
+lib64
+
+# Packages
+*.egg
+*.egg-info
+dist
+build
+eggs
+parts
+bin
+develop-eggs
+.installed.cfg
+*.whl
+
+# Translations
+*.mo
+
+# Mr Developer
+.mr.developer.cfg
+
+# Installer logs
+pip-log.txt
+
+# Unit test / coverage reports
+.coverage
+.tox
+.ruff_cache
+.mypy_cache
+
+# Eclipse
+.project
+.pydevproject
+.pyproject
+.settings
+.metadata
+
+#VSCode
+.vscode
+.env
+*.code-workspace
+
+# Vim
+.*.sw[a-z]
+*.un~
+Session.vim
+*~
+
+
+# MaxOSX files
+.DS_Store
+
+# test stuff
+.pytest_cache
+.cache
+__pycache__
+pytests.xml
+nosetests.xml
+coverage.xml
+Local_*
+.hypothesis
+*.gz
+htmlcov/
+*.xml.temp
+
+#remove in case we want a specific LHCb one
+.pylintrc
+
+# docs (auto-generated build output only; docs/assets is tracked)
+docs/_build/
+site/
+
+
+# pixi environments
+.pixi
+pixi.lock
+*.egg-info

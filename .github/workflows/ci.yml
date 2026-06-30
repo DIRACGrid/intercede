@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v6
+      with:
+        python-version: 3.x
+    - uses: pre-commit/action@v3.0.1
+    - uses: pre-commit-ci/lite-action@v1.1.0
+      if: always()
+
+  unittest:
+    name: Unit test - ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - py311
+          - py312
+          - py313
+          - py314
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          run-install: false
+          post-cleanup: false
+      - name: Apply workarounds
+        run: |
+          # Workaround for https://github.com/prefix-dev/pixi/issues/3762
+          sed -i.bak 's@editable = true@editable = false@g' pyproject.toml
+          rm pyproject.toml.bak
+          # Show any changes
+          git diff
+      - uses: prefix-dev/setup-pixi@v0.9.3
+        with:
+          cache: false
+          environments: ${{ matrix.python-version }}
+      - name: Run pytest
+        run: pixi run -e ${{ matrix.python-version }} pytest

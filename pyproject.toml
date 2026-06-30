@@ -1,0 +1,142 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/intercede"]
+
+[project]
+name = "intercede"
+description = "Unified interfaces to Computing Elements and batch systems for DIRAC / DiracX"
+
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = []
+license = { text = "GPL-3.0-only" }
+dynamic = ["version"]
+dependencies = []
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering",
+  "Topic :: System :: Distributed Computing",
+]
+
+[project.urls]
+Homepage = "https://github.com/DIRACGrid/intercede"
+Repository = "https://github.com/DIRACGrid/intercede"
+
+
+[project.optional-dependencies]
+testing = [
+  "pytest",
+  "pytest-asyncio",
+  "pytest-xdist",
+  "ty",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+  "backend_only: restrict a test to the named backend fixture(s)",
+  "xfail_backend: strict xfail a test on the named backend fixture(s)",
+]
+
+
+[tool.ruff]
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "F",   # pyflakes
+  "B",   # flake8-bugbear
+  "I",   # isort
+  "PLE", # pylint errors
+  "D",   # pydocstyle
+  # "UP",   # pyUpgrade
+  "FLY", # flynt
+  "DTZ", # flake8-datetimez
+  "S",   # flake8-bandit
+  "N",   # pep8-naming
+]
+ignore = [
+  "B905",
+  "B006",
+  "S101", # bandit: use of assert https://docs.astral.sh/ruff/rules/assert/
+  # TODO: Maybe enable these
+  "D100",
+  "D101",
+  "D102",
+  "D103",
+  "D104",
+  "D105",
+  "D107",
+  # non lower case variables (https://docs.astral.sh/ruff/rules/non-lowercase-variable-in-function/)
+  "N806",
+  # invalid arguments
+  "N803",
+  "FLY002",
+]
+
+[tool.ruff.lint.isort]
+required-imports = ["from __future__ import annotations"]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 120
+
+[tool.ruff.format]
+docstring-code-format = true
+
+
+[tool.isort]
+profile = "black"
+
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64", "osx-arm64"]
+
+[tool.pixi.environments]
+default = { features = [], solve-group = "default" }
+pre-commit = { features = ["pre-commit"], no-default-feature = true }
+py311 = { features = ["testing", "py311"] }
+py312 = { features = ["testing", "py312"] }
+py313 = { features = ["testing", "py313"] }
+py314 = { features = ["testing", "py314"] }
+
+[tool.pixi.feature.testing.pypi-dependencies]
+intercede = { path = ".", editable = true }
+
+
+# Features for running pre-commit hooks
+[tool.pixi.feature.pre-commit.dependencies]
+pre-commit = "*"
+[tool.pixi.feature.pre-commit.tasks]
+pre-commit = { cmd = "pre-commit", description = "Run pre-commit" }
+
+
+[tool.pixi.tasks]
+unit-test = { cmd = "pytest -v", description = "Run the unit tests" }
+
+
+[tool.pixi.feature.py311.dependencies]
+python = "3.11.*"
+
+[tool.pixi.feature.py312.dependencies]
+python = "3.12.*"
+
+[tool.pixi.feature.py313.dependencies]
+python = "3.13.*"
+
+[tool.pixi.feature.py314.dependencies]
+python = "3.14.*"

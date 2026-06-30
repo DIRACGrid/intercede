@@ -1,0 +1,68 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "minimumReleaseAge": "7 days",
+  "enabledManagers": [
+    "pip_requirements",
+    "pep621",
+    "github-actions"
+  ],
+  "python": {
+    "rangeStrategy": "auto"
+  },
+  "ignorePaths": [
+    ".pixi/**",
+    "**/__pycache__/**",
+    "**/venv/**",
+    "**/env/**"
+  ],
+  "packageRules": [
+    {
+      "description": "Group all GitHub Actions updates together",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions",
+      "labels": ["dependencies", "github-actions"]
+    },
+    {
+      "description": "Group all Python dependency updates together",
+      "matchManagers": [
+        "pip_requirements",
+        "pep621"
+      ],
+      "groupName": "Python dependencies",
+      "labels": ["dependencies", "python"]
+    },
+    {
+      "description": "Handle major version updates separately",
+      "matchUpdateTypes": ["major"],
+      "groupName": "Major version updates",
+      "labels": ["breaking-change"],
+      "automerge": false
+    },
+    {
+      "description": "Handle minor and patch updates together",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "automerge": false
+    },
+    {
+      "description": "Python version requirements - be conservative",
+      "matchDatasources": ["pypi"],
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "30 days"
+    },
+    {
+      "description": "Group build dependencies",
+      "matchPackagePatterns": ["hatchling", "hatch-vcs"],
+      "groupName": "Build dependencies",
+      "labels": ["dependencies", "build"]
+    },
+    {
+      "description": "Group test dependencies",
+      "matchPackagePatterns": ["pytest.*", "ty"],
+      "groupName": "Testing dependencies",
+      "labels": ["dependencies", "testing"]
+    }
+  ]
+}
