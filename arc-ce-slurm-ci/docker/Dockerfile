@@ -1,0 +1,78 @@
+# =============================================================================
+# ARC CE + SLURM "all-in-one" image for integration testing
+#
+# Runs, as real systemd-managed services (this is what arcctl/ARC packaging
+# expects and is far more robust than re-implementing service supervision):
+#   - munge                    (SLURM auth)
+#   - slurmctld + slurmd       (single-node SLURM cluster, one fake node)
+#   - arc-arex + arc-arex-ws   (NorduGrid ARC CE, LRMS backend = slurm)
+#
+# Base: AlmaLinux 9. On EL9, ARC7 ships in EPEL as nordugrid-arc7-*.
+#
+# IMPORTANT: this container runs systemd as PID 1, which needs either
+#   docker run --privileged
+# or (rootless-friendlier)
+#   docker run --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw
+# See the .gitlab-ci.yml in this repo for the CI-side flags.
+# =============================================================================
+FROM almalinux:9
+
+ENV container=docker
+
+# ---------------------------------------------------------------------------
+# systemd + EPEL + SLURM + munge + ARC CE + ARC client tools
+# ---------------------------------------------------------------------------
+RUN dnf -y install epel-release && \
+    dnf -y update && \
+    dnf -y install systemd crypto-policies-scripts && \
+    update-crypto-policies --set LEGACY && \
+    dnf -y install \
+        munge munge-libs \
+        slurm slurm-slurmctld slurm-slurmd \
+        openssl ca-certificates \
+        procps-ng iproute net-tools which curl jq \
+        && \
+    dnf -y install \
+        nordugrid-arc7-arex \
+        nordugrid-arc7-client \
+        nordugrid-arc7-arcctl \
+        && \
+    dnf clean all && \
+    # standard "systemd in docker" cleanup: mask units that don't apply / fail in containers
+    (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = systemd-tmpfiles-setup.service ] || rm -f "$i"; done) ; \
+    rm -f /lib/systemd/system/multi-user.target.wants/* ; \
+    rm -f /etc/systemd/system/*.wants/* ; \
+    rm -f /lib/systemd/system/local-fs.target.wants/* ; \
+    rm -f /lib/systemd/system/sockets.target.wants/*udev* ; \
+    rm -f /lib/systemd/system/sockets.target.wants/*initctl* ; \
+    rm -f /lib/systemd/system/basic.target.wants/* ; \
+    rm -f /lib/systemd/system/anaconda.target.wants/* 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# Unprivileged pool account that grid jobs get mapped to + matching SLURM node
+# ---------------------------------------------------------------------------
+RUN useradd -m -s /bin/bash griduser01
+
+# ---------------------------------------------------------------------------
+# Config files
+# ---------------------------------------------------------------------------
+COPY slurm.conf   /etc/slurm/slurm.conf
+COPY cgroup.conf  /etc/slurm/cgroup.conf
+COPY arc.conf     /etc/arc.conf
+
+COPY bootstrap.sh          /usr/local/bin/bootstrap.sh
+COPY healthcheck.sh        /usr/local/bin/healthcheck.sh
+COPY arc-bootstrap.service /etc/systemd/system/arc-bootstrap.service
+
+RUN mkdir -p /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
+    chown slurm:slurm /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
+    chmod +x /usr/local/bin/bootstrap.sh /usr/local/bin/healthcheck.sh && \
+    systemctl enable munge slurmctld slurmd arc-bootstrap.service
+
+EXPOSE 443
+
+HEALTHCHECK --interval=5s --timeout=5s --start-period=90s --retries=30 \
+    CMD /usr/local/bin/healthcheck.sh
+
+STOPSIGNAL SIGRTMIN+3
+CMD ["/usr/sbin/init"]

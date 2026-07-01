@@ -1,0 +1,13 @@
+[Unit]
+Description=Bootstrap ARC CE (arex/arex-ws) on top of local SLURM, mint test client cert
+After=network.target munge.service slurmctld.service slurmd.service
+Wants=munge.service slurmctld.service slurmd.service
+ConditionPathExists=!/run/arc-ready
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/bootstrap.sh
+
+[Install]
+WantedBy=multi-user.target

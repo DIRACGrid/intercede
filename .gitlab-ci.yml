@@ -1,0 +1,89 @@
+stages:
+  - build
+  - test
+
+variables:
+  # Standard docker-in-docker setup (see explanation in the README)
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DRIVER: overlay2
+  IMAGE_NAME: "${CI_REGISTRY_IMAGE}/arc-ce-slurm-test"
+  IMAGE_TAG: "${CI_COMMIT_SHORT_SHA}"
+  CONTAINER_NAME: arc-ce-slurm-test
+
+# -----------------------------------------------------------------------
+# Build the ARC CE + SLURM image and hand it to the test job as an artifact
+# (avoids needing a registry push/pull round-trip just for CI).
+# -----------------------------------------------------------------------
+build_image:
+  stage: build
+  image: docker:26
+  services:
+    - docker:26-dind
+  script:
+    - docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f docker/Dockerfile docker/
+    - docker save "${IMAGE_NAME}:${IMAGE_TAG}" -o image.tar
+  artifacts:
+    paths:
+      - image.tar
+    expire_in: 1 hour
+
+# -----------------------------------------------------------------------
+# Spin the image up as a real (privileged) container, wait for the
+# HEALTHCHECK to go green, then drive submit -> monitor -> retrieve
+# against it via `docker exec`.
+#
+# NOTE: this needs a GitLab Runner whose executor is allowed to run
+# privileged containers, i.e. in the runner's config.toml:
+#
+#   [runners.docker]
+#     privileged = true
+#
+# --privileged is required here because the container runs systemd as
+# PID 1 (which arcctl / SLURM's own unit files expect), and systemd
+# needs to manage cgroups.
+# -----------------------------------------------------------------------
+integration_test:
+  stage: test
+  image: docker:26
+  services:
+    - docker:26-dind
+  needs:
+    - build_image
+  before_script:
+    - docker load -i image.tar
+  script:
+    - docker run -d --privileged --name "${CONTAINER_NAME}" --hostname arc-ce "${IMAGE_NAME}:${IMAGE_TAG}"
+    - echo "Waiting for ARC CE + SLURM health check..."
+    - |
+      status="starting"
+      for i in $(seq 1 60); do
+        status=$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "starting")
+        echo "  [$i/60] health=${status}"
+        [ "${status}" = "healthy" ] && break
+        sleep 5
+      done
+      if [ "${status}" != "healthy" ]; then
+        echo "Container never became healthy, dumping logs:"
+        docker logs "${CONTAINER_NAME}" || true
+        docker exec "${CONTAINER_NAME}" cat /var/log/arc-bootstrap.log || true
+        exit 1
+      fi
+    - docker cp test/. "${CONTAINER_NAME}:/opt/arc-test/"
+    - docker exec "${CONTAINER_NAME}" chown -R griduser01:griduser01 /opt/arc-test
+    - docker exec "${CONTAINER_NAME}" chmod +x /opt/arc-test/run_integration_test.sh /opt/arc-test/run.sh
+    - docker exec -u griduser01 "${CONTAINER_NAME}" /opt/arc-test/run_integration_test.sh
+  after_script:
+    - docker logs "${CONTAINER_NAME}" > container-console.log 2>&1 || true
+    - docker exec "${CONTAINER_NAME}" cat /var/log/arc/arex.log > arex.log 2>/dev/null || true
+    - docker exec "${CONTAINER_NAME}" cat /var/log/arc-bootstrap.log > arc-bootstrap.log 2>/dev/null || true
+    - docker exec "${CONTAINER_NAME}" cat /var/log/slurm/slurmctld.log > slurmctld.log 2>/dev/null || true
+    - docker rm -f "${CONTAINER_NAME}" || true
+  artifacts:
+    when: always
+    paths:
+      - container-console.log
+      - arex.log
+      - arc-bootstrap.log
+      - slurmctld.log
+    expire_in: 1 week
