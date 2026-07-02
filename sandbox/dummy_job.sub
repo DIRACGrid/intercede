@@ -1,0 +1,12 @@
+# dummy_job.sub
+universe                = vanilla
+executable              = payload.sh
+
+output                  = job.out
+error                   = job.err
+log                     = job.log
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+
+queue 1
