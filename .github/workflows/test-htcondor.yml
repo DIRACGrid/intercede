@@ -41,6 +41,7 @@ jobs:
       - name: Submit Dummy Job
         run: |
           # Cluster number will always be 1, as we use a fresh container
+          echo "Before submitting this job, sleep for 10 seconds" && sleep 10
           docker exec -u test_user condor-local condor_submit dummy_job.sub
 
       - name: Wait for Job Completion
