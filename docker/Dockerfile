@@ -22,30 +22,45 @@ ENV container=docker
 # ---------------------------------------------------------------------------
 # systemd + EPEL + SLURM + munge + ARC CE + ARC client tools
 # ---------------------------------------------------------------------------
-RUN dnf -y install epel-release && \
-    dnf -y install dnf-plugins-core && \
-    dnf config-manager --set-enabled crb && \
-    dnf -y update && \
-    dnf -y install systemd crypto-policies-scripts && \
-    update-crypto-policies --set LEGACY && \
-    dnf -y install --setopt=strict=1 \
+# ---------------------------------------------------------------------------
+# systemd + EPEL + SLURM + munge + ARC CE + ARC client tools
+# Split into separate RUN layers on purpose: easier to see exactly which
+# step fails, and a failure in one can't be silently absorbed by a long
+# && chain (which is what happened with the curl/curl-minimal conflict
+# below before this was split out).
+# ---------------------------------------------------------------------------
+RUN dnf -y install epel-release dnf-plugins-core && \
+    dnf config-manager --set-enabled crb
+
+RUN dnf -y update
+
+RUN dnf -y install systemd crypto-policies-scripts && \
+    update-crypto-policies --set LEGACY
+
+# --allowerasing: AlmaLinux's base image ships curl-minimal, which
+# conflicts with the full curl package. Let dnf swap it out rather than
+# aborting the whole transaction (this was silently dropping munge/slurm
+# from the install set entirely).
+RUN dnf -y install --allowerasing --setopt=strict=1 \
         munge munge-libs \
         slurm slurm-slurmctld slurm-slurmd \
         openssl ca-certificates \
-        procps-ng iproute net-tools which curl jq \
-        && \
-    dnf -y install --setopt=strict=1 \
+        procps-ng iproute net-tools which curl jq
+
+RUN dnf -y install --allowerasing --setopt=strict=1 \
         nordugrid-arc7-arex \
         nordugrid-arc7-client \
-        nordugrid-arc7-arcctl \
-        && \
-    dnf clean all && \
-    # Hard assertion: fail the build loudly right here if anything above
-    # was silently skipped, instead of finding out at container runtime.
-    rpm -q munge munge-libs slurm slurm-slurmctld slurm-slurmd \
-           nordugrid-arc7-arex nordugrid-arc7-client nordugrid-arc7-arcctl && \
-    # standard "systemd in docker" cleanup: mask units that don't apply / fail in containers
-    (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = systemd-tmpfiles-setup.service ] || rm -f "$i"; done) ; \
+        nordugrid-arc7-arcctl
+
+RUN dnf clean all
+
+# Hard assertion, isolated in its own layer: this MUST fail the build
+# (visibly, as its own numbered step) if any package didn't actually land.
+RUN rpm -q munge munge-libs slurm slurm-slurmctld slurm-slurmd \
+           nordugrid-arc7-arex nordugrid-arc7-client nordugrid-arc7-arcctl
+
+# standard "systemd in docker" cleanup: mask units that don't apply / fail in containers
+RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = systemd-tmpfiles-setup.service ] || rm -f "$i"; done) ; \
     rm -f /lib/systemd/system/multi-user.target.wants/* ; \
     rm -f /etc/systemd/system/*.wants/* ; \
     rm -f /lib/systemd/system/local-fs.target.wants/* ; \

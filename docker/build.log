@@ -1,0 +1,323 @@
+--progress is a global compose flag, better use `docker compose --progress xx build ...
+time="2026-07-02T10:17:34+02:00" level=warning msg="/home/vijay/Downloads/intercede/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+ Image arc-ce-slurm-test:local Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 563B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 5.76kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/almalinux:9
+#3 DONE 0.9s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [ 1/12] FROM docker.io/library/almalinux:9@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743
+#5 resolve docker.io/library/almalinux:9@sha256:d2515c769e7b73f95c4fde38c0a505336ff38f14990c0b7253b77060a049a743 0.0s done
+#5 CACHED
+
+#6 [internal] load build context
+#6 transferring context: 198B done
+#6 DONE 0.0s
+
+#7 [ 2/12] RUN dnf -y install epel-release &&     dnf -y install dnf-plugins-core &&     dnf config-manager --set-enabled crb &&     dnf -y update &&     dnf -y install systemd crypto-policies-scripts &&     update-crypto-policies --set LEGACY &&     dnf -y install --setopt=strict=1         munge munge-libs         slurm slurm-slurmctld slurm-slurmd         openssl ca-certificates         procps-ng iproute net-tools which curl jq         &&     dnf -y install --setopt=strict=1         nordugrid-arc7-arex         nordugrid-arc7-client         nordugrid-arc7-arcctl         &&     dnf clean all &&     rpm -q munge munge-libs slurm slurm-slurmctld slurm-slurmd            nordugrid-arc7-arex nordugrid-arc7-client nordugrid-arc7-arcctl &&     (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = systemd-tmpfiles-setup.service ] || rm -f "$i"; done) ;     rm -f /lib/systemd/system/multi-user.target.wants/* ;     rm -f /etc/systemd/system/*.wants/* ;     rm -f /lib/systemd/system/local-fs.target.wants/* ;     rm -f /lib/systemd/system/sockets.target.wants/*udev* ;     rm -f /lib/systemd/system/sockets.target.wants/*initctl* ;     rm -f /lib/systemd/system/basic.target.wants/* ;     rm -f /lib/systemd/system/anaconda.target.wants/* 2>/dev/null || true
+#7 1.573 AlmaLinux 9 - AppStream                          13 MB/s |  15 MB     00:01    
+#7 5.018 AlmaLinux 9 - BaseOS                             11 MB/s |  14 MB     00:01    
+#7 7.019 AlmaLinux 9 - Extras                             33 kB/s |  22 kB     00:00    
+#7 7.571 Dependencies resolved.
+#7 7.572 ================================================================================
+#7 7.572  Package                 Architecture  Version              Repository     Size
+#7 7.572 ================================================================================
+#7 7.572 Installing:
+#7 7.572  epel-release            noarch        9-9.el9              extras         18 k
+#7 7.572 Installing weak dependencies:
+#7 7.572  dnf-plugins-core        noarch        4.3.0-26.el9         baseos         35 k
+#7 7.572 
+#7 7.572 Transaction Summary
+#7 7.572 ================================================================================
+#7 7.572 Install  2 Packages
+#7 7.572 
+#7 7.573 Total download size: 53 k
+#7 7.573 Installed size: 48 k
+#7 7.573 Downloading Packages:
+#7 8.870 (1/2): dnf-plugins-core-4.3.0-26.el9.noarch.rpm 612 kB/s |  35 kB     00:00    
+#7 8.903 (2/2): epel-release-9-9.el9.noarch.rpm          204 kB/s |  18 kB     00:00    
+#7 8.904 --------------------------------------------------------------------------------
+#7 8.904 Total                                            40 kB/s |  53 kB     00:01     
+#7 8.943 Running transaction check
+#7 8.952 Transaction check succeeded.
+#7 8.952 Running transaction test
+#7 8.959 Transaction test succeeded.
+#7 8.959 Running transaction
+#7 8.998   Preparing        :                                                        1/1 
+#7 9.034   Installing       : dnf-plugins-core-4.3.0-26.el9.noarch                   1/2 
+#7 9.072   Installing       : epel-release-9-9.el9.noarch                            2/2 
+#7 9.076   Running scriptlet: epel-release-9-9.el9.noarch                            2/2 
+#7 9.086 Many EPEL packages require the CodeReady Builder (CRB) repository.
+#7 9.086 It is recommended that you run /usr/bin/crb enable to enable the CRB repository.
+#7 9.086 
+#7 9.167   Verifying        : dnf-plugins-core-4.3.0-26.el9.noarch                   1/2 
+#7 9.167   Verifying        : epel-release-9-9.el9.noarch                            2/2 
+#7 9.223 
+#7 9.223 Installed:
+#7 9.223   dnf-plugins-core-4.3.0-26.el9.noarch        epel-release-9-9.el9.noarch       
+#7 9.223 
+#7 9.223 Complete!
+#7 11.69 Extra Packages for Enterprise Linux 9 - x86_64  9.6 MB/s |  21 MB     00:02    
+#7 18.74 Extra Packages for Enterprise Linux 9 openh264  3.8 kB/s | 2.5 kB     00:00    
+#7 19.94 Package dnf-plugins-core-4.3.0-26.el9.noarch is already installed.
+#7 19.96 Dependencies resolved.
+#7 19.97 Nothing to do.
+#7 19.97 Complete!
+#7 21.36 AlmaLinux 9 - CRB                               4.3 MB/s | 3.9 MB     00:00    
+#7 22.21 Last metadata expiration check: 0:00:01 ago on Thu Jul  2 08:17:56 2026.
+#7 23.45 Dependencies resolved.
+#7 23.45 ================================================================================
+#7 23.45  Package                   Arch      Version                    Repo       Size
+#7 23.45 ================================================================================
+#7 23.45 Upgrading:
+#7 23.45  coreutils-single          x86_64    8.32-41.el9_8              baseos    598 k
+#7 23.45  epel-release              noarch    9-11.el9                   epel       19 k
+#7 23.45  expat                     x86_64    2.5.0-6.el9_8.1            baseos    117 k
+#7 23.45  glibc                     x86_64    2.34-272.el9_8             baseos    2.0 M
+#7 23.45  glibc-common              x86_64    2.34-272.el9_8             baseos    299 k
+#7 23.45  glibc-minimal-langpack    x86_64    2.34-272.el9_8             baseos     27 k
+#7 23.45  libeconf                  x86_64    0.4.1-7.el9_8              baseos     26 k
+#7 23.45  libsolv                   x86_64    0.7.24-5.el9_8             baseos    402 k
+#7 23.45  libtasn1                  x86_64    4.16.0-10.el9_8            baseos     73 k
+#7 23.45  libxml2                   x86_64    2.9.13-14.el9_8.1          baseos    746 k
+#7 23.45  openssl                   x86_64    1:3.5.5-4.el9_8            baseos    1.4 M
+#7 23.45  openssl-fips-provider     x86_64    1:3.5.5-4.el9_8            baseos    816 k
+#7 23.45  openssl-libs              x86_64    1:3.5.5-4.el9_8            baseos    2.3 M
+#7 23.45  systemd                   x86_64    252-67.el9_8.4.alma.1      baseos    4.0 M
+#7 23.45  systemd-libs              x86_64    252-67.el9_8.4.alma.1      baseos    651 k
+#7 23.45  systemd-pam               x86_64    252-67.el9_8.4.alma.1      baseos    258 k
+#7 23.45  systemd-rpm-macros        noarch    252-67.el9_8.4.alma.1      baseos     46 k
+#7 23.45  vim-minimal               x86_64    2:8.2.2637-26.el9_8.6      baseos    672 k
+#7 23.45 
+#7 23.45 Transaction Summary
+#7 23.45 ================================================================================
+#7 23.45 Upgrade  18 Packages
+#7 23.45 
+#7 23.45 Total download size: 14 M
+#7 23.45 Downloading Packages:
+#7 24.28 (1/18): expat-2.5.0-6.el9_8.1.x86_64.rpm        1.8 MB/s | 117 kB     00:00    
+#7 24.33 (2/18): coreutils-single-8.32-41.el9_8.x86_64.r 5.1 MB/s | 598 kB     00:00    
+#7 24.35 (3/18): glibc-minimal-langpack-2.34-272.el9_8.x 1.6 MB/s |  27 kB     00:00    
+#7 24.35 (4/18): glibc-common-2.34-272.el9_8.x86_64.rpm  3.8 MB/s | 299 kB     00:00    
+#7 24.36 (5/18): libeconf-0.4.1-7.el9_8.x86_64.rpm       1.7 MB/s |  26 kB     00:00    
+#7 24.39 (6/18): libtasn1-4.16.0-10.el9_8.x86_64.rpm     2.5 MB/s |  73 kB     00:00    
+#7 24.42 (7/18): glibc-2.34-272.el9_8.x86_64.rpm         9.5 MB/s | 2.0 MB     00:00    
+#7 24.43 (8/18): libsolv-0.7.24-5.el9_8.x86_64.rpm       5.4 MB/s | 402 kB     00:00    
+#7 24.53 (9/18): openssl-fips-provider-3.5.5-4.el9_8.x86 7.9 MB/s | 816 kB     00:00    
+#7 24.56 (10/18): openssl-3.5.5-4.el9_8.x86_64.rpm        10 MB/s | 1.4 MB     00:00    
+#7 24.82 (11/18): systemd-252-67.el9_8.4.alma.1.x86_64.r  15 MB/s | 4.0 MB     00:00    
+#7 24.85 (12/18): openssl-libs-3.5.5-4.el9_8.x86_64.rpm  7.2 MB/s | 2.3 MB     00:00    
+#7 24.86 (13/18): libxml2-2.9.13-14.el9_8.1.x86_64.rpm   1.6 MB/s | 746 kB     00:00    
+#7 24.87 (14/18): systemd-pam-252-67.el9_8.4.alma.1.x86_  12 MB/s | 258 kB     00:00    
+#7 24.88 (15/18): systemd-libs-252-67.el9_8.4.alma.1.x86  10 MB/s | 651 kB     00:00    
+#7 24.89 (16/18): systemd-rpm-macros-252-67.el9_8.4.alma 2.0 MB/s |  46 kB     00:00    
+#7 24.92 (17/18): vim-minimal-8.2.2637-26.el9_8.6.x86_64  15 MB/s | 672 kB     00:00    
+#7 25.00 (18/18): epel-release-9-11.el9.noarch.rpm       162 kB/s |  19 kB     00:00    
+#7 25.00 --------------------------------------------------------------------------------
+#7 25.00 Total                                           9.2 MB/s |  14 MB     00:01     
+#7 25.47 Extra Packages for Enterprise Linux 9 - x86_64  1.6 MB/s | 1.6 kB     00:00    
+#7 25.59 Importing GPG key 0x3228467C:
+#7 25.59  Userid     : "Fedora (epel9) <epel@fedoraproject.org>"
+#7 25.59  Fingerprint: FF8A D134 4597 106E CE81 3B91 8A38 72BF 3228 467C
+#7 25.59  From       : /etc/pki/rpm-gpg/RPM-GPG-KEY-EPEL-9
+#7 25.60 Key imported successfully
+#7 25.62 Running transaction check
+#7 25.71 Transaction check succeeded.
+#7 25.71 Running transaction test
+#7 25.95 Transaction test succeeded.
+#7 25.95 Running transaction
+#7 26.33   Preparing        :                                                        1/1 
+#7 26.44   Upgrading        : glibc-common-2.34-272.el9_8.x86_64                    1/36 
+#7 26.45   Upgrading        : glibc-minimal-langpack-2.34-272.el9_8.x86_64          2/36 
+#7 26.45   Running scriptlet: glibc-2.34-272.el9_8.x86_64                           3/36 
+#7 26.68   Upgrading        : glibc-2.34-272.el9_8.x86_64                           3/36 
+#7 26.69   Running scriptlet: glibc-2.34-272.el9_8.x86_64                           3/36 
+#7 26.78   Upgrading        : coreutils-single-8.32-41.el9_8.x86_64                 4/36 
+#7 26.83   Upgrading        : libxml2-2.9.13-14.el9_8.1.x86_64                      5/36 
+#7 26.87   Upgrading        : openssl-fips-provider-1:3.5.5-4.el9_8.x86_64          6/36 
+#7 26.97   Upgrading        : openssl-libs-1:3.5.5-4.el9_8.x86_64                   7/36 
+#7 27.01   Upgrading        : systemd-libs-252-67.el9_8.4.alma.1.x86_64             8/36 
+#7 27.02   Running scriptlet: systemd-libs-252-67.el9_8.4.alma.1.x86_64             8/36 
+#7 27.05   Upgrading        : systemd-rpm-macros-252-67.el9_8.4.alma.1.noarch       9/36 
+#7 27.07   Upgrading        : systemd-pam-252-67.el9_8.4.alma.1.x86_64             10/36 
+#7 27.08   Running scriptlet: systemd-252-67.el9_8.4.alma.1.x86_64                 11/36 
+#7 27.83   Upgrading        : systemd-252-67.el9_8.4.alma.1.x86_64                 11/36 
+#7 27.85   Running scriptlet: systemd-252-67.el9_8.4.alma.1.x86_64                 11/36 
+#7 27.90   Upgrading        : libsolv-0.7.24-5.el9_8.x86_64                        12/36 
+#7 27.96   Upgrading        : openssl-1:3.5.5-4.el9_8.x86_64                       13/36 
+#7 27.98   Upgrading        : expat-2.5.0-6.el9_8.1.x86_64                         14/36 
+#7 28.00   Upgrading        : libeconf-0.4.1-7.el9_8.x86_64                        15/36 
+#7 28.02   Upgrading        : libtasn1-4.16.0-10.el9_8.x86_64                      16/36 
+#7 28.06   Upgrading        : vim-minimal-2:8.2.2637-26.el9_8.6.x86_64             17/36 
+#7 28.07   Upgrading        : epel-release-9-11.el9.noarch                         18/36 
+#7 28.07   Running scriptlet: epel-release-9-11.el9.noarch                         18/36 
+#7 28.22   Cleanup          : systemd-252-67.el9_8.2.alma.1.x86_64                 19/36 
+#7 28.22   Running scriptlet: systemd-252-67.el9_8.2.alma.1.x86_64                 19/36 
+#7 28.35   Cleanup          : systemd-libs-252-67.el9_8.2.alma.1.x86_64            20/36 
+#7 28.36   Cleanup          : systemd-pam-252-67.el9_8.2.alma.1.x86_64             21/36 
+#7 28.37   Cleanup          : openssl-1:3.5.5-2.el9_8.x86_64                       22/36 
+#7 28.38   Cleanup          : coreutils-single-8.32-40.el9.x86_64                  23/36 
+#7 28.39   Cleanup          : libsolv-0.7.24-4.el9.x86_64                          24/36 
+#7 28.40   Cleanup          : libxml2-2.9.13-14.el9_7.x86_64                       25/36 
+#7 28.41   Cleanup          : vim-minimal-2:8.2.2637-26.el9_8.4.x86_64             26/36 
+#7 28.42   Cleanup          : expat-2.5.0-6.el9.x86_64                             27/36 
+#7 28.42   Cleanup          : openssl-fips-provider-1:3.5.5-2.el9_8.x86_64         28/36 
+#7 28.44   Cleanup          : openssl-libs-1:3.5.5-2.el9_8.x86_64                  29/36 
+#7 28.45   Cleanup          : libeconf-0.4.1-5.el9.x86_64                          30/36 
+#7 28.46   Cleanup          : libtasn1-4.16.0-9.el9.x86_64                         31/36 
+#7 28.46   Cleanup          : systemd-rpm-macros-252-67.el9_8.2.alma.1.noarch      32/36 
+#7 28.47   Cleanup          : epel-release-9-9.el9.noarch                          33/36 
+#7 28.48   Cleanup          : glibc-2.34-270.el9_8.x86_64                          34/36 
+#7 28.49   Cleanup          : glibc-minimal-langpack-2.34-270.el9_8.x86_64         35/36 
+#7 28.49   Cleanup          : glibc-common-2.34-270.el9_8.x86_64                   36/36 
+#7 28.51   Running scriptlet: glibc-common-2.34-270.el9_8.x86_64                   36/36 
+#7 28.70   Verifying        : coreutils-single-8.32-41.el9_8.x86_64                 1/36 
+#7 28.70   Verifying        : coreutils-single-8.32-40.el9.x86_64                   2/36 
+#7 28.70   Verifying        : expat-2.5.0-6.el9_8.1.x86_64                          3/36 
+#7 28.70   Verifying        : expat-2.5.0-6.el9.x86_64                              4/36 
+#7 28.70   Verifying        : glibc-2.34-272.el9_8.x86_64                           5/36 
+#7 28.70   Verifying        : glibc-2.34-270.el9_8.x86_64                           6/36 
+#7 28.70   Verifying        : glibc-common-2.34-272.el9_8.x86_64                    7/36 
+#7 28.70   Verifying        : glibc-common-2.34-270.el9_8.x86_64                    8/36 
+#7 28.70   Verifying        : glibc-minimal-langpack-2.34-272.el9_8.x86_64          9/36 
+#7 28.70   Verifying        : glibc-minimal-langpack-2.34-270.el9_8.x86_64         10/36 
+#7 28.70   Verifying        : libeconf-0.4.1-7.el9_8.x86_64                        11/36 
+#7 28.70   Verifying        : libeconf-0.4.1-5.el9.x86_64                          12/36 
+#7 28.70   Verifying        : libsolv-0.7.24-5.el9_8.x86_64                        13/36 
+#7 28.70   Verifying        : libsolv-0.7.24-4.el9.x86_64                          14/36 
+#7 28.70   Verifying        : libtasn1-4.16.0-10.el9_8.x86_64                      15/36 
+#7 28.70   Verifying        : libtasn1-4.16.0-9.el9.x86_64                         16/36 
+#7 28.70   Verifying        : libxml2-2.9.13-14.el9_8.1.x86_64                     17/36 
+#7 28.70   Verifying        : libxml2-2.9.13-14.el9_7.x86_64                       18/36 
+#7 28.70   Verifying        : openssl-1:3.5.5-4.el9_8.x86_64                       19/36 
+#7 28.70   Verifying        : openssl-1:3.5.5-2.el9_8.x86_64                       20/36 
+#7 28.70   Verifying        : openssl-fips-provider-1:3.5.5-4.el9_8.x86_64         21/36 
+#7 28.70   Verifying        : openssl-fips-provider-1:3.5.5-2.el9_8.x86_64         22/36 
+#7 28.70   Verifying        : openssl-libs-1:3.5.5-4.el9_8.x86_64                  23/36 
+#7 28.70   Verifying        : openssl-libs-1:3.5.5-2.el9_8.x86_64                  24/36 
+#7 28.70   Verifying        : systemd-252-67.el9_8.4.alma.1.x86_64                 25/36 
+#7 28.70   Verifying        : systemd-252-67.el9_8.2.alma.1.x86_64                 26/36 
+#7 28.70   Verifying        : systemd-libs-252-67.el9_8.4.alma.1.x86_64            27/36 
+#7 28.70   Verifying        : systemd-libs-252-67.el9_8.2.alma.1.x86_64            28/36 
+#7 28.70   Verifying        : systemd-pam-252-67.el9_8.4.alma.1.x86_64             29/36 
+#7 28.70   Verifying        : systemd-pam-252-67.el9_8.2.alma.1.x86_64             30/36 
+#7 28.70   Verifying        : systemd-rpm-macros-252-67.el9_8.4.alma.1.noarch      31/36 
+#7 28.70   Verifying        : systemd-rpm-macros-252-67.el9_8.2.alma.1.noarch      32/36 
+#7 28.70   Verifying        : vim-minimal-2:8.2.2637-26.el9_8.6.x86_64             33/36 
+#7 28.70   Verifying        : vim-minimal-2:8.2.2637-26.el9_8.4.x86_64             34/36 
+#7 28.70   Verifying        : epel-release-9-11.el9.noarch                         35/36 
+#7 28.70   Verifying        : epel-release-9-9.el9.noarch                          36/36 
+#7 28.80 
+#7 28.80 Upgraded:
+#7 28.80   coreutils-single-8.32-41.el9_8.x86_64                                         
+#7 28.80   epel-release-9-11.el9.noarch                                                  
+#7 28.80   expat-2.5.0-6.el9_8.1.x86_64                                                  
+#7 28.80   glibc-2.34-272.el9_8.x86_64                                                   
+#7 28.80   glibc-common-2.34-272.el9_8.x86_64                                            
+#7 28.80   glibc-minimal-langpack-2.34-272.el9_8.x86_64                                  
+#7 28.80   libeconf-0.4.1-7.el9_8.x86_64                                                 
+#7 28.80   libsolv-0.7.24-5.el9_8.x86_64                                                 
+#7 28.80   libtasn1-4.16.0-10.el9_8.x86_64                                               
+#7 28.80   libxml2-2.9.13-14.el9_8.1.x86_64                                              
+#7 28.80   openssl-1:3.5.5-4.el9_8.x86_64                                                
+#7 28.80   openssl-fips-provider-1:3.5.5-4.el9_8.x86_64                                  
+#7 28.80   openssl-libs-1:3.5.5-4.el9_8.x86_64                                           
+#7 28.80   systemd-252-67.el9_8.4.alma.1.x86_64                                          
+#7 28.80   systemd-libs-252-67.el9_8.4.alma.1.x86_64                                     
+#7 28.80   systemd-pam-252-67.el9_8.4.alma.1.x86_64                                      
+#7 28.80   systemd-rpm-macros-252-67.el9_8.4.alma.1.noarch                               
+#7 28.80   vim-minimal-2:8.2.2637-26.el9_8.6.x86_64                                      
+#7 28.80 
+#7 28.80 Complete!
+#7 29.38 Last metadata expiration check: 0:00:08 ago on Thu Jul  2 08:17:56 2026.
+#7 29.50 Package systemd-252-67.el9_8.4.alma.1.x86_64 is already installed.
+#7 29.50 Package crypto-policies-scripts-20260224-1.gitea0f072.el9_8.noarch is already installed.
+#7 29.52 Dependencies resolved.
+#7 29.52 Nothing to do.
+#7 29.52 Complete!
+#7 29.71 Setting system policy to LEGACY
+#7 29.71 Note: System-wide crypto policies are applied on application start-up.
+#7 29.71 It is recommended to restart the system for the change of policies
+#7 29.71 to fully take place.
+#7 30.18 Last metadata expiration check: 0:00:09 ago on Thu Jul  2 08:17:56 2026.
+#7 30.30 Package openssl-1:3.5.5-4.el9_8.x86_64 is already installed.
+#7 30.30 Package ca-certificates-2025.2.80_v9.0.305-91.el9.noarch is already installed.
+#7 30.33 Error: 
+#7 30.33  Problem: problem with installed package curl-minimal-7.76.1-40.el9.x86_64
+#7 30.33   - package curl-minimal-7.76.1-40.el9.x86_64 from @System conflicts with curl provided by curl-7.76.1-40.el9.x86_64 from baseos
+#7 30.33   - package curl-minimal-7.76.1-40.el9.x86_64 from baseos conflicts with curl provided by curl-7.76.1-40.el9.x86_64 from baseos
+#7 30.33   - conflicting requests
+#7 30.33 (try to add '--allowerasing' to command line to replace conflicting packages or '--skip-broken' to skip uninstallable packages or '--nobest' to use not only best candidate packages)
+#7 DONE 30.4s
+
+#8 [ 3/12] RUN groupadd -r slurm --gid=990 &&     useradd -r -c "SLURM workload manager" -d /var/lib/slurm -u 990 -g slurm -s /sbin/nologin slurm &&     mkdir -p /var/lib/slurm && chown slurm:slurm /var/lib/slurm
+#8 DONE 0.4s
+
+#9 [ 4/12] RUN useradd -m -s /bin/bash griduser01
+#9 DONE 0.4s
+
+#10 [ 5/12] COPY slurm.conf   /etc/slurm/slurm.conf
+#10 DONE 0.1s
+
+#11 [ 6/12] COPY cgroup.conf  /etc/slurm/cgroup.conf
+#11 DONE 0.1s
+
+#12 [ 7/12] COPY arc.conf     /etc/arc.conf
+#12 DONE 0.0s
+
+#13 [ 8/12] COPY bootstrap.sh          /usr/local/bin/bootstrap.sh
+#13 DONE 0.1s
+
+#14 [ 9/12] COPY healthcheck.sh        /usr/local/bin/healthcheck.sh
+#14 DONE 0.1s
+
+#15 [10/12] COPY arc-bootstrap.service /etc/systemd/system/arc-bootstrap.service
+#15 DONE 0.1s
+
+#16 [11/12] RUN set +e;     echo "== rpm -q (are the packages even installed?) ==";     rpm -q munge slurm slurm-slurmctld slurm-slurmd;     echo "== munge file list =="; rpm -ql munge 2>&1;     echo "== slurm file list =="; rpm -ql slurm 2>&1;     echo "== slurm-slurmctld file list =="; rpm -ql slurm-slurmctld 2>&1;     echo "== slurm-slurmd file list =="; rpm -ql slurm-slurmd 2>&1;     echo "== anything under /usr/lib/systemd/system matching munge or slurm ==";     ls -la /usr/lib/systemd/system/ | grep -iE 'munge|slurm';     true
+#16 0.222 == rpm -q (are the packages even installed?) ==
+#16 0.248 package munge is not installed
+#16 0.248 package slurm is not installed
+#16 0.248 package slurm-slurmctld is not installed
+#16 0.248 package slurm-slurmd is not installed
+#16 0.248 == munge file list ==
+#16 0.256 package munge is not installed
+#16 0.257 == slurm file list ==
+#16 0.266 package slurm is not installed
+#16 0.266 == slurm-slurmctld file list ==
+#16 0.275 package slurm-slurmctld is not installed
+#16 0.276 == slurm-slurmd file list ==
+#16 0.285 package slurm-slurmd is not installed
+#16 0.286 == anything under /usr/lib/systemd/system matching munge or slurm ==
+#16 DONE 0.3s
+
+#17 [12/12] RUN mkdir -p /var/spool/slurmctld /var/spool/slurmd /var/log/slurm &&     chown slurm:slurm /var/spool/slurmctld /var/spool/slurmd /var/log/slurm &&     chmod +x /usr/local/bin/bootstrap.sh /usr/local/bin/healthcheck.sh &&     systemctl enable arc-bootstrap.service
+#17 0.311 Created symlink /etc/systemd/system/multi-user.target.wants/arc-bootstrap.service → /etc/systemd/system/arc-bootstrap.service.
+#17 DONE 0.3s
+
+#18 exporting to image
+#18 exporting layers
+#18 exporting layers 6.1s done
+#18 exporting manifest sha256:226d793415d4629cbb1ee8fec1dbff3e3b3c1ce058acbc368514171513b45a22 0.0s done
+#18 exporting config sha256:c54e2a223ca5d80ee52cd7013c35a56c197c04af5b0cd5696d87186b6565690a 0.0s done
+#18 exporting attestation manifest sha256:34d3aa14e734c1e12b9d839a3c1f6b956b0bfa84239bac21a6c2f6e56ce9ccb7 0.0s done
+#18 exporting manifest list sha256:b6e6a0cae27d441603e8d8f478fa9c8bbe094dbbac2e8d481adf0635323a057c
+#18 exporting manifest list sha256:b6e6a0cae27d441603e8d8f478fa9c8bbe094dbbac2e8d481adf0635323a057c 0.0s done
+#18 naming to docker.io/library/arc-ce-slurm-test:local done
+#18 unpacking to docker.io/library/arc-ce-slurm-test:local
+#18 unpacking to docker.io/library/arc-ce-slurm-test:local 1.2s done
+#18 DONE 7.6s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ Image arc-ce-slurm-test:local Built 
