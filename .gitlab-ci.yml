@@ -21,6 +21,14 @@ build_image:
   services:
     - docker:26-dind
   script:
+    - |
+      echo "Waiting for Docker daemon..."
+      for i in $(seq 1 30); do
+        docker info >/dev/null 2>&1 && break
+        echo "  [$i/30] not ready yet..."
+        sleep 2
+      done
+      docker info
     - docker build -t "${IMAGE_NAME}:${IMAGE_TAG}" -f docker/Dockerfile docker/
     - docker save "${IMAGE_NAME}:${IMAGE_TAG}" -o image.tar
   artifacts:
