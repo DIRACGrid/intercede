@@ -29,7 +29,7 @@ jobs:
         run: |
           # Create the unprivileged user inside the container
           docker exec condor-local useradd -m test_user
-          
+
           # Fix ownership so test_user can write stdout/logs back to the host filesystem
           docker exec condor-local chown -R test_user:test_user /job
 
@@ -47,23 +47,23 @@ jobs:
         run: |
           echo "Monitoring Cluster ID: 1"
           docker exec -u test_user condor-local condor_watch_q -exit all,done -clusters 1
-      
+
       - name: Verify Job Output Logs
         run: |
           # Check the output file written back to the GitHub workspace runner
           echo "=== Content of job.out ==="
           cat sandbox/job.out
-          
+
           # Check the standard error to ensure no underlying bash glitches occurred
           echo "=== Content of job.err ==="
           cat sandbox/job.err
-          
+
           # 1. Assert that our expected string exists in the output file
           if ! grep -q "Hello from native HTCondor!" sandbox/job.out; then
             echo "Failure: Expected job output string not found."
             exit 1
           fi
-          
+
           # 2. Assert that the error log is completely empty
           if [ -s sandbox/job.err ]; then
             echo "Failure: job.err is not empty! Something went wrong during execution."
