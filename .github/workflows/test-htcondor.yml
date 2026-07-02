@@ -68,16 +68,16 @@ jobs:
             # condor_q prints the Cluster ID only if the job is active/idle/running.
             # If the output is empty, the job has left the queue and is complete.
             STATUS=$(docker exec -u test_user condor-local condor_q 1 -format "%d" ClusterId)
-            
+
             if [ -z "$STATUS" ]; then
               echo "Job left the queue (Completed)!"
               exit 0
             fi
-            
+
             echo "Job is still pending/processing... ($i/60)"
             sleep 1
           done
-          
+
           echo "Error: Job did not finish within 60 seconds."
           exit 1
       - name: Verify Job Output Logs
