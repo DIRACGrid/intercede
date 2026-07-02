@@ -34,7 +34,7 @@ RUN dnf -y install epel-release dnf-plugins-core && \
 
 RUN dnf -y update
 
-RUN dnf -y install systemd crypto-policies-scripts && \
+RUN dnf -y install systemd crypto-policies-scripts dbus-broker && \
     update-crypto-policies --set LEGACY
 
 # --allowerasing: AlmaLinux's base image ships curl-minimal, which
@@ -127,6 +127,7 @@ RUN set +e; \
 RUN mkdir -p /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
     chown slurm:slurm /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
     chmod +x /usr/local/bin/bootstrap.sh /usr/local/bin/healthcheck.sh && \
+    systemctl enable dbus-broker.service && \
     systemctl enable arc-bootstrap.service
 # NOTE: munge.service / slurmctld.service / slurmd.service are deliberately
 # NOT enabled here. arc-bootstrap.service declares Wants=/After= on all
