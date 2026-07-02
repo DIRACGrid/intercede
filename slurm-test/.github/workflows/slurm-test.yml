@@ -1,0 +1,69 @@
+name: Slurm Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  slurm-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install podman-compose
+        run: pip install podman-compose
+
+      - name: Build image
+        run: podman build -t slurm-test .
+
+      - name: Start cluster
+        run: |
+          podman network create slurm
+          podman run -d --name intercede-slurmctld --hostname intercede-slurmctld \
+            --network slurm --privileged slurm-test controller
+          podman run -d --name intercede-c1 --hostname intercede-c1 \
+            --network slurm --privileged slurm-test worker
+
+      - name: Wait for cluster to be ready
+        run: |
+          for i in $(seq 1 20); do
+            if podman exec intercede-slurmctld sinfo --noheader 2>/dev/null | grep -q "idle"; then
+              echo "Cluster ready"
+              break
+            fi
+            echo "Waiting for cluster... ($i/20)"
+            sleep 3
+          done
+          podman exec intercede-slurmctld sinfo
+
+      - name: Submit simple job
+        run: podman exec intercede-slurmctld sbatch /test-jobs/simple.sh
+
+      - name: Submit array job
+        run: podman exec intercede-slurmctld sbatch --array=1-4 /test-jobs/array.sh
+
+      - name: Wait for all jobs to complete
+        run: |
+          for i in $(seq 1 30); do
+            PENDING=$(podman exec intercede-slurmctld squeue --noheader 2>/dev/null | wc -l)
+            if [ "$PENDING" -eq 0 ]; then
+              echo "All jobs completed"
+              break
+            fi
+            echo "Waiting... $PENDING job(s) still in queue (attempt $i/30)"
+            podman exec intercede-slurmctld squeue
+            sleep 5
+          done
+
+      - name: Show job output
+        run: |
+          podman exec intercede-c1 bash -c 'cat /tmp/slurm-*.out 2>/dev/null || echo "No output files found"'
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "=== slurmctld log ==="
+          podman exec intercede-slurmctld cat /var/log/slurm/slurmctld.log || true
+          echo "=== slurmd log ==="
+          podman exec intercede-c1 cat /var/log/slurm/slurmd.log || true

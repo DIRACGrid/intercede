@@ -1,0 +1,29 @@
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y \
+        slurmctld \
+        slurmd \
+        slurm-client \
+        munge && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
+    chown slurm:slurm /var/spool/slurmctld /var/spool/slurmd /var/log/slurm
+
+# Bake a shared munge key so all containers from this image authenticate each other
+# without needing a runtime volume. Fine for testing; never do this in production.
+RUN dd if=/dev/urandom bs=1 count=1024 2>/dev/null > /etc/munge/munge.key && \
+    chown munge:munge /etc/munge/munge.key && \
+    chmod 400 /etc/munge/munge.key
+
+COPY configs/slurm.conf /etc/slurm/slurm.conf
+COPY configs/cgroup.conf /etc/slurm/cgroup.conf
+COPY test-jobs/ /test-jobs/
+COPY scripts/entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /entrypoint.sh /test-jobs/*.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

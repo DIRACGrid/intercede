@@ -1,0 +1,23 @@
+services:
+  intercede-slurmctld:
+    build: .
+    container_name: intercede-slurmctld
+    hostname: intercede-slurmctld
+    command: ["controller"]
+    privileged: true
+    networks:
+      - slurm
+
+  intercede-c1:
+    build: .
+    container_name: intercede-c1
+    hostname: intercede-c1
+    command: ["worker"]
+    privileged: true
+    depends_on:
+      - intercede-slurmctld
+    networks:
+      - slurm
+
+networks:
+  slurm:
