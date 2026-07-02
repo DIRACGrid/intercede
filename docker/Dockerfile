@@ -100,6 +100,7 @@ RUN useradd -m -s /bin/bash griduser01
 # Config files
 # ---------------------------------------------------------------------------
 COPY slurm.conf   /etc/slurm/slurm.conf
+COPY cgroup.conf  /etc/slurm/cgroup.conf
 COPY arc.conf     /etc/arc.conf
 
 COPY bootstrap.sh          /usr/local/bin/bootstrap.sh
