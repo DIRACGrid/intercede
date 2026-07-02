@@ -1,21 +1,35 @@
-name: Slurm Tests
+name: Slurm Integration Tests
 
 on:
   push:
+    branches:
+      - main
+    paths:
+      - 'standalone-slurm/**'
+      - 'src/**'
   pull_request:
+    branches:
+      - main
+    paths:
+      - 'standalone-slurm/**'
+      - 'src/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  slurm-test:
+  slurm-integration:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install podman-compose
         run: pip install podman-compose
 
-      - name: Build image
-        run: podman build -t slurm-test .
+      - name: Build Slurm image
+        run: podman build -t slurm-test standalone-slurm/
 
       - name: Start cluster
         run: |
@@ -37,11 +51,11 @@ jobs:
           done
           podman exec intercede-slurmctld sinfo
 
-      - name: Submit simple job
-        run: podman exec intercede-slurmctld sbatch /test-jobs/simple.sh
-
-      - name: Submit array job
-        run: podman exec intercede-slurmctld sbatch --array=1-4 /test-jobs/array.sh
+      - name: Submit test jobs
+        run: |
+          podman exec intercede-slurmctld sbatch /test-jobs/simple.sh
+          podman exec intercede-slurmctld sbatch --array=1-4 /test-jobs/array.sh
+          podman exec intercede-slurmctld sbatch /test-jobs/collatz.sh
 
       - name: Wait for all jobs to complete
         run: |
@@ -58,7 +72,7 @@ jobs:
 
       - name: Show job output
         run: |
-          podman exec intercede-c1 bash -c 'cat /tmp/slurm-*.out 2>/dev/null || echo "No output files found"'
+          podman exec intercede-c1 bash -c 'cat /tmp/slurm-*.out'
 
       - name: Show logs on failure
         if: failure()

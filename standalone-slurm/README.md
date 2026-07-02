@@ -86,12 +86,13 @@ podman exec intercede-slurmctld sbatch /tmp/my-job.sh
 
 ## GitHub CI
 
-The workflow in `.github/workflows/slurm-test.yml` runs automatically on push and pull request. It:
+The workflow in `.github/workflows/slurm-integration.yml` runs automatically on push and pull
+request when files under `standalone-slurm/` or `src/` change. It:
 
 1. Builds the image with `podman build`
 2. Creates a `slurm` network and starts both containers
 3. Polls `sinfo` until the compute node shows `idle`
-4. Submits the simple and array test jobs
+4. Submits the simple, array, and Collatz test jobs
 5. Waits for all jobs to leave the queue
 6. Prints job output
 7. On failure, dumps the `slurmctld` and `slurmd` logs
@@ -99,19 +100,18 @@ The workflow in `.github/workflows/slurm-test.yml` runs automatically on push an
 ## Project structure
 
 ```
-.
-├── Containerfile                        # Rocky Linux 9 + EPEL Slurm + Munge
+standalone-slurm/
+├── Containerfile                        # Ubuntu 26.04 + Slurm + Munge
 ├── compose.yml                          # Local development with podman-compose
 ├── configs/
-│   └── slurm.conf                       # Slurm configuration
+│   ├── slurm.conf                       # Slurm configuration
+│   └── cgroup.conf                      # Disables systemd scope creation (container-safe)
 ├── scripts/
 │   └── entrypoint.sh                    # Starts the right daemon based on role arg
-├── test-jobs/
-│   ├── simple.sh                        # Single-task job
-│   └── array.sh                         # 4-task array job
-└── .github/
-    └── workflows/
-        └── slurm-test.yml               # GitHub Actions CI workflow
+└── test-jobs/
+    ├── simple.sh                        # Single-task job
+    ├── array.sh                         # 4-task array job
+    └── collatz.sh                       # Collatz sequence (starting number = job ID % 1000)
 ```
 
 ## Configuration notes
