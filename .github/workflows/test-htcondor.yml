@@ -62,7 +62,7 @@ jobs:
         run: |
           # -table is an option for CI workflows that do not have an TTY attached
           echo "Monitoring Cluster ID: 1"
-          docker exec -u test_user condor-local condor_watch_q -table -exit all,done -clusters 1
+          docker exec -u test_user condor-local condor_watch_q -summary -exit all,done -clusters 1
 
       - name: Verify Job Output Logs
         run: |
