@@ -49,6 +49,14 @@ RUN dnf -y install epel-release && \
     rm -f /lib/systemd/system/anaconda.target.wants/* 2>/dev/null || true
 
 # ---------------------------------------------------------------------------
+# slurm service account (EPEL's slurm packages do NOT create this user
+# automatically, unlike some other distros' packaging - has to be done here)
+# ---------------------------------------------------------------------------
+RUN groupadd -r slurm --gid=990 && \
+    useradd -r -c "SLURM workload manager" -d /var/lib/slurm -u 990 -g slurm -s /sbin/nologin slurm && \
+    mkdir -p /var/lib/slurm && chown slurm:slurm /var/lib/slurm
+
+# ---------------------------------------------------------------------------
 # Unprivileged pool account that grid jobs get mapped to + matching SLURM node
 # ---------------------------------------------------------------------------
 RUN useradd -m -s /bin/bash griduser01
