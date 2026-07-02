@@ -75,8 +75,19 @@ COPY arc-bootstrap.service /etc/systemd/system/arc-bootstrap.service
 # Debug aid: prints exactly which systemd unit names the munge/slurm
 # packages actually shipped. Check this in the build log if bootstrap.sh
 # ever times out waiting for munge/slurmctld/slurmd at runtime.
-RUN echo "== systemd units shipped by munge / slurm packages ==" && \
-    rpm -ql munge slurm slurm-slurmctld slurm-slurmd | grep systemd
+# Debug aid (non-fatal): shows exactly what's installed for munge/slurm
+# and whether they shipped systemd units. Read this in the build log if
+# bootstrap.sh ever times out waiting for munge/slurmctld/slurmd later.
+RUN set +e; \
+    echo "== rpm -q (are the packages even installed?) =="; \
+    rpm -q munge slurm slurm-slurmctld slurm-slurmd; \
+    echo "== munge file list =="; rpm -ql munge 2>&1; \
+    echo "== slurm file list =="; rpm -ql slurm 2>&1; \
+    echo "== slurm-slurmctld file list =="; rpm -ql slurm-slurmctld 2>&1; \
+    echo "== slurm-slurmd file list =="; rpm -ql slurm-slurmd 2>&1; \
+    echo "== anything under /usr/lib/systemd/system matching munge or slurm =="; \
+    ls -la /usr/lib/systemd/system/ | grep -iE 'munge|slurm'; \
+    true
 
 RUN mkdir -p /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
     chown slurm:slurm /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
