@@ -72,10 +72,21 @@ COPY bootstrap.sh          /usr/local/bin/bootstrap.sh
 COPY healthcheck.sh        /usr/local/bin/healthcheck.sh
 COPY arc-bootstrap.service /etc/systemd/system/arc-bootstrap.service
 
+# Debug aid: prints exactly which systemd unit names the munge/slurm
+# packages actually shipped. Check this in the build log if bootstrap.sh
+# ever times out waiting for munge/slurmctld/slurmd at runtime.
+RUN echo "== systemd units shipped by munge / slurm packages ==" && \
+    rpm -ql munge slurm slurm-slurmctld slurm-slurmd | grep systemd
+
 RUN mkdir -p /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
     chown slurm:slurm /var/spool/slurmctld /var/spool/slurmd /var/log/slurm && \
     chmod +x /usr/local/bin/bootstrap.sh /usr/local/bin/healthcheck.sh && \
-    systemctl enable munge slurmctld slurmd arc-bootstrap.service
+    systemctl enable arc-bootstrap.service
+# NOTE: munge.service / slurmctld.service / slurmd.service are deliberately
+# NOT enabled here. arc-bootstrap.service declares Wants=/After= on all
+# three, so systemd pulls them in automatically as dependencies when
+# arc-bootstrap.service starts at boot - no need to double-enable them,
+# and it avoids brittle unit-name lookups at build time.
 
 EXPOSE 443
 
