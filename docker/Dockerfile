@@ -23,21 +23,27 @@ ENV container=docker
 # systemd + EPEL + SLURM + munge + ARC CE + ARC client tools
 # ---------------------------------------------------------------------------
 RUN dnf -y install epel-release && \
+    dnf -y install dnf-plugins-core && \
+    dnf config-manager --set-enabled crb && \
     dnf -y update && \
     dnf -y install systemd crypto-policies-scripts && \
     update-crypto-policies --set LEGACY && \
-    dnf -y install \
+    dnf -y install --setopt=strict=1 \
         munge munge-libs \
         slurm slurm-slurmctld slurm-slurmd \
         openssl ca-certificates \
         procps-ng iproute net-tools which curl jq \
         && \
-    dnf -y install \
+    dnf -y install --setopt=strict=1 \
         nordugrid-arc7-arex \
         nordugrid-arc7-client \
         nordugrid-arc7-arcctl \
         && \
     dnf clean all && \
+    # Hard assertion: fail the build loudly right here if anything above
+    # was silently skipped, instead of finding out at container runtime.
+    rpm -q munge munge-libs slurm slurm-slurmctld slurm-slurmd \
+           nordugrid-arc7-arex nordugrid-arc7-client nordugrid-arc7-arcctl && \
     # standard "systemd in docker" cleanup: mask units that don't apply / fail in containers
     (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = systemd-tmpfiles-setup.service ] || rm -f "$i"; done) ; \
     rm -f /lib/systemd/system/multi-user.target.wants/* ; \
