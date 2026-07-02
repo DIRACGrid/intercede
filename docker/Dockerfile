@@ -59,6 +59,20 @@ RUN dnf clean all
 RUN rpm -q munge munge-libs slurm slurm-slurmctld slurm-slurmd \
            nordugrid-arc7-arex nordugrid-arc7-client nordugrid-arc7-arcctl
 
+# munge's package should auto-generate /etc/munge/munge.key and create the
+# "munge" system user via its post-install scriptlet, but neither reliably
+# happens in this build environment - so do both explicitly.
+RUN if ! getent group munge >/dev/null; then groupadd -r munge; fi && \
+    if ! getent passwd munge >/dev/null; then \
+        useradd -r -g munge -d /etc/munge -s /sbin/nologin -c "MUNGE Uid 'N' Gid Emporium" munge; \
+    fi && \
+    mkdir -p /etc/munge /var/lib/munge /var/log/munge /run/munge && \
+    chown munge:munge /etc/munge /var/lib/munge /var/log/munge /run/munge && \
+    chmod 0700 /etc/munge && \
+    /usr/sbin/create-munge-key -f && \
+    chown munge:munge /etc/munge/munge.key && \
+    chmod 0400 /etc/munge/munge.key
+
 # standard "systemd in docker" cleanup: mask units that don't apply / fail in containers
 RUN (cd /lib/systemd/system/sysinit.target.wants/; for i in *; do [ "$i" = systemd-tmpfiles-setup.service ] || rm -f "$i"; done) ; \
     rm -f /lib/systemd/system/multi-user.target.wants/* ; \
