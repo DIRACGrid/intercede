@@ -1,0 +1,62 @@
+# Template stack — copy to stacks/<id>/compose.yml and adapt.
+# Stack contract: docs/dev/reference/integration-stacks.md
+# How-to:         docs/dev/how-to/add-an-integration-stack.md
+#
+# Contract highlights:
+#   - `docker compose -f compose.yml up --wait` must yield a ready backend: healthchecks are
+#     mandatory on every service (`up --wait` gates on them — no sleep-and-retry loops).
+#   - Daemons run in the foreground under a plain entrypoint or minimal supervisor — never
+#     systemd (IC-ADR-002 §3) — and log to stdout/stderr so `docker compose logs` captures them
+#     (a file-logging daemon redirects its log to /dev/stdout; the CI failure artifact is compose
+#     logs only).
+#   - Credentials are minted ephemerally at container start into the shared, host-readable
+#     `./credentials` bind mount (gitignored) — a Docker *named* volume is root-owned under
+#     /var/lib/docker and unreadable by the host pytest that drives `exec_in_container: false`
+#     stacks. The layout `credentials/<id>/…` is the interface between stack and harness
+#     (IC-ADR-002 §4). Mint throwaway Test-CA material world-readable; the harness copies anything
+#     needing private modes (0400/0600) into a private dir itself.
+#   - Images come from stacks/_images/ Dockerfiles with pinned, Renovate-annotated versions;
+#     CI pulls prebuilt images from GHCR once issue #14 lands (build: is the local fallback).
+#
+# `backend` is the service the harness drives. A multi-service stack (a CE + its LRMS, or a Slurm
+# controller + worker) adds more services here and names one of them `backend`; parameterize a
+# per-role image rather than duplicating it (integration-images.md). Intra-stack secrets (e.g. a
+# munge key shared between Slurm services) follow the same rule as credentials — minted at start
+# into a stack-internal volume, never baked into an image (a published image with a baked key is a
+# leaked credential).
+services:
+  backend:
+    # image: ghcr.io/diracgrid/intercede-testenv/<name>:${BACKEND_VERSION:-latest}
+    build:
+      context: ../_images/CHANGEME
+      args:
+        BACKEND_VERSION: ${BACKEND_VERSION:-latest}
+    hostname: backend
+    networks:
+      - stack
+    # For a host-run harness (exec_in_container: false) publish the backend's port on localhost and
+    # record the same host:port in config/<name>/intercede-client.toml. A TLS backend's Test-CA host
+    # certificate must carry a SAN for the name the client actually dials — mint it for both the
+    # compose hostname and localhost (ARC on EL9 additionally needs crypto-policies set to LEGACY
+    # for the proxy chain).
+    # ports:
+    #   - "127.0.0.1:2222:22"   # e.g. sshd
+    volumes:
+      # host-readable bind mount, NOT a named volume (see the credentials note above); gitignored.
+      - ./credentials:/shared/credentials
+      # - ./config/basic/backend.conf:/etc/…:ro   # backend half of the configuration (§1)
+    healthcheck:
+      # Real readiness probe, e.g.:
+      #   Slurm:       ["CMD-SHELL", "sinfo | grep -q idle"]
+      #   HTCondor:    ["CMD", "condor_status", "-limit", "1"]
+      #   HTCondor-CE: ["CMD", "condor_ce_status"]
+      #   ARC REST:    ["CMD-SHELL", "curl -ksf https://localhost:443/arex/rest/1.0 -o /dev/null"]
+      #   sshd:        ["CMD-SHELL", "true < /dev/tcp/localhost/22"]
+      test: ["CMD", "false"] # CHANGEME — a stack without a real healthcheck must not pass review
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 30s
+
+networks:
+  stack: {}

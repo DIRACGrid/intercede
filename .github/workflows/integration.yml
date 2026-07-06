@@ -1,0 +1,102 @@
+# Skeleton of the manifest-driven integration workflow (IC-ADR-002 §5; scaffold issue #9).
+#
+# The matrix is generated from tests/integration/stacks.yml — adding a stack, configuration or
+# version is a manifest entry plus files, never a workflow edit. generate_matrix.py emits jobs only
+# for *harmonized* stacks (those with a stacks/<id>/compose.yml); stacks that are seeded in the
+# manifest but not yet harmonized are announced with a `::notice` in the matrix job and produce no
+# job here (so this workflow has zero jobs until the first stack lands).
+#
+# Triggers on any PR that touches the integration suite (so a stack PR self-tests the moment it
+# lands files — no workflow edit), plus manual/reusable dispatch. It is NOT yet gating: until issue
+# #14 wires it into ci.yml, has CI pull prebuilt images from GHCR (instead of building on the
+# runner), and makes it a required check, a red run here does not block merges.
+name: Integration tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    paths:
+      - "tests/integration/**"
+      - ".github/workflows/integration.yml"
+      - ".github/actions/pixi-setup/**"
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Generate {stack x config x version} matrix from stacks.yml
+        id: gen
+        # Same script developers run locally (without --github-output) to preview the matrix. It
+        # also filters to harmonized stacks and prints a notice for the seeded-only ones.
+        # PyYAML ships with the runner's system python; `pip install pyyaml` here if that changes.
+        run: python3 tests/integration/generate_matrix.py --github-output
+
+  integration:
+    needs: matrix
+    if: needs.matrix.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    name: ${{ matrix.stack }} / ${{ matrix.config }} / ${{ matrix.version }}
+    env:
+      COMPOSE_FILE: tests/integration/stacks/${{ matrix.compose_stack }}/compose.yml
+      BACKEND_VERSION: ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@v6
+
+      # Every job in the matrix is a harmonized stack (the matrix job filtered out the rest), so
+      # compose.yml is guaranteed present — no per-step "has this stack landed?" guard is needed.
+      - name: Start the stack (healthchecks gate readiness)
+        run: docker compose -f "$COMPOSE_FILE" up --wait
+
+      - uses: ./.github/actions/pixi-setup
+        if: matrix.exec_in_container == false
+        with:
+          environments: py313
+
+      - name: Run the contract suite
+        run: |
+          if [ "${{ matrix.exec_in_container }}" = "true" ]; then
+            # local-* stacks: run pytest inside the batch container (IC-ADR-002 §1). The batch
+            # scheduler typically refuses to run as root (HTCondor, Slurm), so the image must ship
+            # an unprivileged test user and the suite + pytest must be mounted or baked in.
+            # TODO(#13/#14): mount/install the suite and pin the exec user (compose `user:` or
+            # `exec --user <test-user>`); see docs/dev/reference/integration-stacks.md.
+            runner=(docker compose -f "$COMPOSE_FILE" exec -T backend pytest)
+          else
+            runner=(pixi run -e py313 pytest)
+          fi
+          set +e  # keep going so exit 5 (no tests selected) can be handled below
+          "${runner[@]}" tests/integration -m "${{ matrix.markers }}" \
+            --stack="${{ matrix.stack }}" --config="${{ matrix.config }}"
+          rc=$?
+          # pytest exits 5 when the stack's markers select no tests. Phase 0 ships only the
+          # manifest tests, so the first harmonized stack would otherwise go red for "no tests
+          # ran"; tolerate exit 5 with a notice until the Phase-2 contract suite lands.
+          if [ "$rc" -eq 5 ]; then
+            echo "::notice::stack '${{ matrix.stack }}': no tests matched markers '${{ matrix.markers }}' (pytest exit 5) - passing until the contract suite lands"
+            rc=0
+          fi
+          exit "$rc"
+
+      - name: Collect daemon logs
+        if: failure()
+        # Daemons run in the foreground and log to stdout/stderr (IC-ADR-002 §3), so compose logs
+        # are the whole failure story — a file-logging daemon redirects its log to /dev/stdout.
+        run: docker compose -f "$COMPOSE_FILE" logs --no-color > compose-logs.txt || true
+
+      - name: Upload logs as artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-${{ matrix.stack }}-${{ matrix.config }}-${{ matrix.version }}
+          path: compose-logs.txt

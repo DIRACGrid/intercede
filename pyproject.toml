@@ -36,6 +36,7 @@ testing = [
   "pytest",
   "pytest-asyncio",
   "pytest-xdist",
+  "pyyaml",
   "ty",
 ]
 
@@ -49,6 +50,14 @@ asyncio_mode = "auto"
 markers = [
   "backend_only: restrict a test to the named backend fixture(s)",
   "xfail_backend: strict xfail a test on the named backend fixture(s)",
+  # Integration-suite markers (IC-ADR-002 §2): stacks.yml selects per-stack subsets with -m.
+  "remote: drives a remote CE backend (grid gateway: ARC, HTCondor-CE)",
+  "scheduler: drives a Transport x Scheduler composition (BatchBackend)",
+  "arc: requires an ARC CE",
+  "htcondor: requires an HTCondor schedd or HTCondor-CE",
+  "slurm: requires a Slurm cluster",
+  "ssh: requires an sshd-reachable batch host",
+  "destructive_fetch: asserts one-shot/destructive output-retrieval semantics",
 ]
 
 

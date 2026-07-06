@@ -76,6 +76,9 @@ htmlcov/
 #remove in case we want a specific LHCb one
 .pylintrc
 
+# Integration-stack credentials: minted per run into a bind mount, never committed (IC-ADR-002 §4)
+tests/integration/stacks/*/credentials/
+
 # docs (auto-generated build output only; docs/assets is tracked)
 docs/_build/
 site/
