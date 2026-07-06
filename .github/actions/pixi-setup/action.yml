@@ -1,0 +1,29 @@
+name: Set up pixi
+description: >
+  Install pixi and the requested environment(s), applying the editable-install workaround for
+  prefix-dev/pixi#3762 before the environment is solved. Shared by ci.yml and integration.yml so
+  the workaround lives in one place.
+
+inputs:
+  environments:
+    description: Space-separated pixi environment name(s) to install (e.g. "py313").
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - uses: prefix-dev/setup-pixi@v0.9.3
+      with:
+        run-install: false
+        post-cleanup: false
+    - name: Workaround for prefix-dev/pixi#3762
+      shell: bash
+      run: |
+        # Editable installs break under pixi in CI; pin to non-editable before the env is solved.
+        sed -i.bak 's@editable = true@editable = false@g' pyproject.toml
+        rm pyproject.toml.bak
+        git diff --stat  # show what the workaround changed
+    - uses: prefix-dev/setup-pixi@v0.9.3
+      with:
+        cache: false
+        environments: ${{ inputs.environments }}

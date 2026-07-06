@@ -1,0 +1,31 @@
+# THE manifest: single source of truth for the integration CI matrix (IC-ADR-002 §1, §5).
+#
+# The field reference and the stack contract live in docs/dev/reference/integration-stacks.md —
+# this file is data, not documentation. Adding a stack, a configuration, or a supported version is
+# one entry here plus files under stacks/<id>/; no workflow edits.
+#
+# The entries below are seeded for the three in-flight stack PRs (issues #5, #12, #13); a stack
+# becomes a CI job only once its stacks/<id>/compose.yml lands ("harmonized").
+stacks:
+  - id: arc-slurm
+    configs: [basic]
+    versions: [latest] # ARC 7.x leading edge; floor is 7.x (IC-ADR-002 §8)
+    markers: "remote and arc"
+
+  - id: htcondor
+    configs: [basic]
+    versions: [lts, latest] # HTCondor LTS anchor + leading edge (IC-ADR-002 §8)
+    markers: "remote and htcondor"
+
+  - id: ssh-slurm
+    configs: [basic]
+    markers: "scheduler and slurm"
+
+  - id: local-slurm
+    stack: ssh-slurm # reuse ssh-slurm's compose environment...
+    configs: [basic]
+    # ...but drive Slurm over the Local transport, so exclude the SSH-transport tests. Every
+    # future local-* alias needs the same `and not ssh` guard: the `ssh` marker is otherwise
+    # byte-identical here and in ssh-slurm, so an ssh test would run in both jobs.
+    markers: "scheduler and slurm and not ssh"
+    exec_in_container: true

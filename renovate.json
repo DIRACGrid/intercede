@@ -7,7 +7,10 @@
   "enabledManagers": [
     "pip_requirements",
     "pep621",
-    "github-actions"
+    "github-actions",
+    "dockerfile",
+    "docker-compose",
+    "custom.regex"
   ],
   "python": {
     "rangeStrategy": "auto"
@@ -17,6 +20,19 @@
     "**/__pycache__/**",
     "**/venv/**",
     "**/env/**"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track pinned backend versions in stack image Dockerfiles via `# renovate:`-annotated ARGs (IC-ADR-002 §6). The datasource/depName/versioning ride in the annotation, so a new stack image needs no renovate.json edit.",
+      "fileMatch": [
+        "(^|/)tests/integration/stacks/_images/.+/Dockerfile$"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>[^\\s]+?)(?: versioning=(?<versioning>[^\\s]+?))?\\s+ARG [A-Za-z0-9_]+?_VERSION=\"?(?<currentValue>[^\"\\s]+)\"?"
+      ],
+      "versioningTemplate": "{{#if versioning}}{{{versioning}}}{{else}}loose{{/if}}"
+    }
   ],
   "packageRules": [
     {
@@ -63,6 +79,27 @@
       "matchPackagePatterns": ["pytest.*", "ty"],
       "groupName": "Testing dependencies",
       "labels": ["dependencies", "testing"]
+    },
+    {
+      "description": "Group ARC backend bumps, never mixed with other backends so a red PR names its culprit (IC-ADR-002 §6). Renovate tracks the leading-edge ARG; anchors are human-managed (§8).",
+      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
+      "matchPackageNames": ["/nordugrid-arc/"],
+      "groupName": "ARC backend (integration stack)",
+      "labels": ["dependencies", "integration-stack", "arc"]
+    },
+    {
+      "description": "Group HTCondor / HTCondor-CE backend bumps (IC-ADR-002 §6, §8)",
+      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
+      "matchPackageNames": ["/htcondor/"],
+      "groupName": "HTCondor backend (integration stack)",
+      "labels": ["dependencies", "integration-stack", "htcondor"]
+    },
+    {
+      "description": "Group Slurm backend bumps (IC-ADR-002 §6, §8)",
+      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
+      "matchPackageNames": ["/slurm/"],
+      "groupName": "Slurm backend (integration stack)",
+      "labels": ["dependencies", "integration-stack", "slurm"]
     }
   ]
 }
