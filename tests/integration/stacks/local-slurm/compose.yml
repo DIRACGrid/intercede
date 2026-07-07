@@ -1,0 +1,50 @@
+services:
+  intercede-slurmctld:
+    image: ghcr.io/diracgrid/intercede-testenv/slurm:${SLURM_IMAGE_TAG:-latest}
+    build: ../_images/slurm
+    container_name: intercede-slurmctld
+    hostname: intercede-slurmctld
+    command: ["controller"]
+    privileged: true
+    volumes:
+      - ./config/basic/slurm.conf:/etc/slurm/slurm.conf:ro
+      - ./config/basic/cgroup.conf:/etc/slurm/cgroup.conf:ro
+      - ./test-jobs:/test-jobs:ro
+      - munge-key:/etc/munge
+    healthcheck:
+      test: ["CMD", "pgrep", "slurmctld"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    networks:
+      - slurm
+
+  intercede-c1:
+    image: ghcr.io/diracgrid/intercede-testenv/slurm:${SLURM_IMAGE_TAG:-latest}
+    build: ../_images/slurm
+    container_name: intercede-c1
+    hostname: intercede-c1
+    command: ["worker"]
+    privileged: true
+    volumes:
+      - ./config/basic/slurm.conf:/etc/slurm/slurm.conf:ro
+      - ./config/basic/cgroup.conf:/etc/slurm/cgroup.conf:ro
+      - munge-key:/etc/munge
+    healthcheck:
+      test: ["CMD", "pgrep", "slurmd"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    depends_on:
+      intercede-slurmctld:
+        condition: service_healthy
+    networks:
+      - slurm
+
+networks:
+  slurm:
+
+volumes:
+  munge-key:

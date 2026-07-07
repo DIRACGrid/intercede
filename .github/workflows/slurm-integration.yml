@@ -5,13 +5,15 @@ on:
     branches:
       - main
     paths:
-      - 'standalone-slurm/**'
+      - 'tests/integration/stacks/local-slurm/**'
+      - 'tests/integration/stacks/_images/slurm/**'
       - 'src/**'
   pull_request:
     branches:
       - main
     paths:
-      - 'standalone-slurm/**'
+      - 'tests/integration/stacks/local-slurm/**'
+      - 'tests/integration/stacks/_images/slurm/**'
       - 'src/**'
 
 concurrency:
@@ -28,56 +30,63 @@ jobs:
       - name: Install podman-compose
         run: pip install podman-compose
 
-      - name: Build Slurm image
-        run: podman build -t slurm-test standalone-slurm/
-
       - name: Start cluster
-        run: |
-          podman network create slurm
-          podman run -d --name intercede-slurmctld --hostname intercede-slurmctld \
-            --network slurm --privileged slurm-test controller
-          podman run -d --name intercede-c1 --hostname intercede-c1 \
-            --network slurm --privileged slurm-test worker
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose up -d
 
-      - name: Wait for cluster to be ready
+      - name: Wait for containers to be healthy
+        working-directory: tests/integration/stacks/local-slurm
         run: |
+          # podman-compose's own `up --wait` never returns even once both
+          # containers report healthy, so poll container health directly.
           for i in $(seq 1 20); do
-            if podman exec intercede-slurmctld sinfo --noheader 2>/dev/null | grep -q "idle"; then
-              echo "Cluster ready"
-              break
-            fi
-            echo "Waiting for cluster... ($i/20)"
+            ctld=$(podman inspect --format='{{.State.Health.Status}}' intercede-slurmctld)
+            c1=$(podman inspect --format='{{.State.Health.Status}}' intercede-c1)
+            [ "$ctld" = "healthy" ] && [ "$c1" = "healthy" ] && break
+            echo "Waiting for containers to be healthy... (slurmctld=$ctld, c1=$c1, attempt $i/20)"
             sleep 3
           done
-          podman exec intercede-slurmctld sinfo
+          podman-compose ps
+
+      - name: Show cluster state
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose exec intercede-slurmctld sinfo
 
       - name: Submit test jobs
+        working-directory: tests/integration/stacks/local-slurm
         run: |
-          podman exec intercede-slurmctld sbatch /test-jobs/simple.sh
-          podman exec intercede-slurmctld sbatch --array=1-4 /test-jobs/array.sh
-          podman exec intercede-slurmctld sbatch /test-jobs/collatz.sh
+          podman-compose exec intercede-slurmctld sbatch /test-jobs/simple.sh
+          podman-compose exec intercede-slurmctld sbatch --array=1-4 /test-jobs/array.sh
+          podman-compose exec intercede-slurmctld sbatch /test-jobs/collatz.sh
 
       - name: Wait for all jobs to complete
+        working-directory: tests/integration/stacks/local-slurm
         run: |
           for i in $(seq 1 30); do
-            PENDING=$(podman exec intercede-slurmctld squeue --noheader 2>/dev/null | wc -l)
+            PENDING=$(podman-compose exec intercede-slurmctld squeue --noheader 2>/dev/null | wc -l)
             if [ "$PENDING" -eq 0 ]; then
               echo "All jobs completed"
               break
             fi
             echo "Waiting... $PENDING job(s) still in queue (attempt $i/30)"
-            podman exec intercede-slurmctld squeue
+            podman-compose exec intercede-slurmctld squeue
             sleep 5
           done
 
       - name: Show job output
-        run: |
-          podman exec intercede-c1 bash -c 'cat /tmp/slurm-*.out'
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose exec intercede-c1 bash -c 'cat /tmp/slurm-*.out'
 
       - name: Show logs on failure
         if: failure()
+        working-directory: tests/integration/stacks/local-slurm
         run: |
           echo "=== slurmctld log ==="
-          podman exec intercede-slurmctld cat /var/log/slurm/slurmctld.log || true
+          podman-compose exec intercede-slurmctld cat /var/log/slurm/slurmctld.log || true
           echo "=== slurmd log ==="
-          podman exec intercede-c1 cat /var/log/slurm/slurmd.log || true
+          podman-compose exec intercede-c1 cat /var/log/slurm/slurmd.log || true
+
+      - name: Tear down
+        if: always()
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose down -v

@@ -1,0 +1,39 @@
+name: Build local-slurm image
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tests/integration/stacks/_images/slurm/**'
+      - '.github/workflows/build-local-slurm-image.yml'
+  schedule:
+    # Weekly rebuild so base-image security updates flow through even when
+    # the Dockerfile itself hasn't changed.
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        run: |
+          podman build \
+            -t ghcr.io/diracgrid/intercede-testenv/slurm:latest \
+            tests/integration/stacks/_images/slurm
+
+      - name: Push image
+        run: podman push ghcr.io/diracgrid/intercede-testenv/slurm:latest

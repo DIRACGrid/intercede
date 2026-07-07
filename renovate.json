@@ -7,7 +7,19 @@
   "enabledManagers": [
     "pip_requirements",
     "pep621",
-    "github-actions"
+    "github-actions",
+    "dockerfile",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Pin backend package versions in integration-stack Dockerfiles",
+      "managerFilePatterns": ["/tests/integration/stacks/_images/.+/Dockerfile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>.*?) depName=(?<depName>.*?)\\s+ARG .*_VERSION=(?<currentValue>.*)\\s"
+      ]
+    }
   ],
   "python": {
     "rangeStrategy": "auto"
@@ -63,6 +75,12 @@
       "matchPackagePatterns": ["pytest.*", "ty"],
       "groupName": "Testing dependencies",
       "labels": ["dependencies", "testing"]
+    },
+    {
+      "description": "Group integration-stack image/version updates together",
+      "matchManagers": ["dockerfile", "custom.regex"],
+      "groupName": "Integration test stack images",
+      "labels": ["dependencies", "integration-tests"]
     }
   ]
 }
