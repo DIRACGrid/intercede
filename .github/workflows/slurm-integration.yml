@@ -1,0 +1,106 @@
+name: Slurm Integration Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'tests/integration/stacks/local-slurm/**'
+      - 'tests/integration/stacks/_images/slurm/**'
+      - 'src/**'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'tests/integration/stacks/local-slurm/**'
+      - 'tests/integration/stacks/_images/slurm/**'
+      - 'src/**'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  slurm-integration:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install podman-compose
+        run: pip install podman-compose
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Pull slurm image
+        # Pulls the exact digest pinned in compose.yml (Renovate-managed). This is a separate,
+        # explicit step so a missing/retired digest fails loudly here instead of `up` silently
+        # falling back to the `build:` directive.
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose pull
+
+      - name: Start cluster
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose up -d
+
+      - name: Wait for containers to be healthy
+        working-directory: tests/integration/stacks/local-slurm
+        run: |
+          # podman-compose's own `up --wait` never returns even once both
+          # containers report healthy, so poll container health directly.
+          for i in $(seq 1 20); do
+            ctld=$(podman inspect --format='{{.State.Health.Status}}' intercede-slurmctld)
+            c1=$(podman inspect --format='{{.State.Health.Status}}' intercede-c1)
+            [ "$ctld" = "healthy" ] && [ "$c1" = "healthy" ] && break
+            echo "Waiting for containers to be healthy... (slurmctld=$ctld, c1=$c1, attempt $i/20)"
+            sleep 3
+          done
+          podman-compose ps
+
+      - name: Show cluster state
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose exec intercede-slurmctld sinfo
+
+      - name: Submit test jobs
+        working-directory: tests/integration/stacks/local-slurm
+        run: |
+          podman-compose exec intercede-slurmctld sbatch /test-jobs/simple.sh
+          podman-compose exec intercede-slurmctld sbatch --array=1-4 /test-jobs/array.sh
+          podman-compose exec intercede-slurmctld sbatch /test-jobs/collatz.sh
+
+      - name: Wait for all jobs to complete
+        working-directory: tests/integration/stacks/local-slurm
+        run: |
+          for i in $(seq 1 30); do
+            PENDING=$(podman-compose exec intercede-slurmctld squeue --noheader 2>/dev/null | wc -l)
+            if [ "$PENDING" -eq 0 ]; then
+              echo "All jobs completed"
+              break
+            fi
+            echo "Waiting... $PENDING job(s) still in queue (attempt $i/30)"
+            podman-compose exec intercede-slurmctld squeue
+            sleep 5
+          done
+
+      - name: Show job output
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose exec intercede-c1 bash -c 'cat /tmp/slurm-*.out'
+
+      - name: Show logs on failure
+        if: failure()
+        working-directory: tests/integration/stacks/local-slurm
+        run: |
+          echo "=== slurmctld log ==="
+          podman-compose exec intercede-slurmctld cat /var/log/slurm/slurmctld.log || true
+          echo "=== slurmd log ==="
+          podman-compose exec intercede-c1 cat /var/log/slurm/slurmd.log || true
+
+      - name: Tear down
+        if: always()
+        working-directory: tests/integration/stacks/local-slurm
+        run: podman-compose down -v
