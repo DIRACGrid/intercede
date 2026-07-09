@@ -9,8 +9,12 @@
     "pep621",
     "github-actions",
     "dockerfile",
+    "docker-compose",
     "custom.regex"
   ],
+  "docker-compose": {
+    "pinDigests": true
+  },
   "customManagers": [
     {
       "customType": "regex",
@@ -78,7 +82,7 @@
     },
     {
       "description": "Group integration-stack image/version updates together",
-      "matchManagers": ["dockerfile", "custom.regex"],
+      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
       "groupName": "Integration test stack images",
       "labels": ["dependencies", "integration-tests"]
     }

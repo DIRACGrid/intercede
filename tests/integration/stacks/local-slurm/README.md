@@ -114,17 +114,29 @@ The workflow in `.github/workflows/slurm-integration.yml` runs automatically on 
 request when files under `tests/integration/stacks/local-slurm/`,
 `tests/integration/stacks/_images/slurm/`, or `src/` change. It:
 
-1. Starts the cluster with `podman-compose up -d` (pulls the image built by
-   `build-local-slurm-image.yml`) and polls both containers' health status until healthy
-2. Submits the simple, array, and Collatz test jobs
-3. Waits for all jobs to leave the queue
-4. Prints job output
-5. On failure, dumps the `slurmctld` and `slurmd` logs
+1. Pulls the image `compose.yml` pins (`podman-compose pull`) — a digest-exact reference
+   (`ghcr.io/diracgrid/intercede-testenv/slurm:latest@sha256:…`), not a floating tag, so every run
+   uses byte-identical content until that pin is deliberately updated. A missing/retired digest
+   fails this step loudly rather than silently falling back to a rebuild.
+2. Starts the cluster with `podman-compose up -d` against the already-pulled image (no rebuild)
+   and polls both containers' health status until healthy
+3. Submits the simple, array, and Collatz test jobs
+4. Waits for all jobs to leave the queue
+5. Prints job output
+6. On failure, dumps the `slurmctld` and `slurmd` logs
 
-The image itself is built and pushed to
-`ghcr.io/diracgrid/intercede-testenv/slurm:latest` by a separate workflow
-(`.github/workflows/build-local-slurm-image.yml`), triggered when the Dockerfile changes and on a
-weekly schedule for base-image security updates — so PR CI just pulls, it doesn't rebuild.
+The image itself is built and pushed to `ghcr.io/diracgrid/intercede-testenv/slurm:latest` by a
+separate workflow (`.github/workflows/build-local-slurm-image.yml`), triggered when the Dockerfile
+changes and on a weekly schedule for base-image security updates. **Renovate owns the digest pin**
+in `compose.yml`: it's configured (`renovate.json`, `docker-compose` manager, `pinDigests: true`)
+to open a PR whenever the digest that `:latest` resolves to changes, so a version bump becomes a
+reviewable, bisectable PR instead of a silent, unreviewed content change (mirroring how ADR-002
+wants backend versions tracked).
+
+> **Bootstrap note:** the image hasn't been published to GHCR yet, so `compose.yml` currently pins
+> a placeholder all-zero digest. Once `build-local-slurm-image.yml` runs and publishes the real
+> image, Renovate's next scan will open a PR replacing the placeholder with the actual digest —
+> CI here will fail to pull until that first pin PR merges.
 
 This workflow is intentionally **not** wired into `ci.yml` / required for merge yet: there's no
 real interCEde-vs-Slurm contract suite (IC-ADR-002 §2) to gate on, since `src/intercede` doesn't

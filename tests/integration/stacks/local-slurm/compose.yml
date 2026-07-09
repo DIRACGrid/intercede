@@ -1,6 +1,8 @@
 services:
   intercede-slurmctld:
-    image: ghcr.io/diracgrid/intercede-testenv/slurm:${SLURM_IMAGE_TAG:-latest}
+    # Placeholder digest — the image hasn't been published to GHCR yet. Renovate will replace
+    # this with the real digest once build-local-slurm-image.yml pushes it, then keep it current.
+    image: ghcr.io/diracgrid/intercede-testenv/slurm:latest@sha256:0000000000000000000000000000000000000000000000000000000000000000
     build: ../_images/slurm
     container_name: intercede-slurmctld
     hostname: intercede-slurmctld
@@ -21,7 +23,7 @@ services:
       - slurm
 
   intercede-c1:
-    image: ghcr.io/diracgrid/intercede-testenv/slurm:${SLURM_IMAGE_TAG:-latest}
+    image: ghcr.io/diracgrid/intercede-testenv/slurm:latest@sha256:0000000000000000000000000000000000000000000000000000000000000000
     build: ../_images/slurm
     container_name: intercede-c1
     hostname: intercede-c1
