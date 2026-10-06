@@ -22,13 +22,24 @@ BACKENDS: dict[str, Callable[[], JobBackend]] = {
 @pytest.fixture(params=sorted(BACKENDS))
 async def backend(request: pytest.FixtureRequest) -> AsyncIterator[JobBackend]:
     name = request.param
-    only = request.node.get_closest_marker("backend_only")
-    if only is not None and name not in only.args:
-        pytest.skip(f"only runs on {', '.join(only.args)}")
-    xfail = request.node.get_closest_marker("xfail_backend")
-    if xfail is not None and name in xfail.args:
+
+    backend_only_marker = request.node.get_closest_marker("backend_only")
+    if (
+        backend_only_marker is not None 
+        and name not in backend_only_marker.args
+    ):
+        pytest.skip(f"only runs on {', '.join(backend_only_marker.args)}")
+
+    xfail_marker = request.node.get_closest_marker("xfail_backend")
+    if (
+        xfail_marker is not None 
+        and name in xfail_marker.args
+    ):
         request.applymarker(
-            pytest.mark.xfail(strict=True, reason=f"known failure on {name}")
+            pytest.mark.xfail(
+                strict=True, 
+                reason=f"known failure on {name}"
+            )
         )
 
     async with BACKENDS[name]() as instance:
