@@ -52,10 +52,10 @@ async def test_whole_operation_failure_raises():
 
 async def test_output_is_repeatable_and_lands_under_dest(tmp_path: Path):
     async with FakeBackend() as backend:
-        h = (await backend.submit(SPEC)).handles[0]
-        backend.finish(h, stdout="hello", files={"result/out.txt": b"42"})
+        handle = (await backend.submit(SPEC)).handles[0]
+        backend.finish(handle, stdout="hello", files={"result/out.txt": b"42"})
         for _ in range(2):
-            outcome = (await backend.get_output([h], tmp_path))[h]
+            outcome = (await backend.get_output([handle], tmp_path))[handle]
             assert outcome.ok and outcome.value is not None
             assert outcome.value.stdout is not None
             assert outcome.value.stdout.read_text() == "hello"
@@ -67,34 +67,34 @@ async def test_output_is_repeatable_and_lands_under_dest(tmp_path: Path):
 
 async def test_output_of_a_running_job_fails_per_job(tmp_path: Path):
     async with FakeBackend() as backend:
-        h = (await backend.submit(SPEC)).handles[0]
-        assert not (await backend.get_output([h], tmp_path))[h].ok
+        handle = (await backend.submit(SPEC)).handles[0]
+        assert not (await backend.get_output([handle], tmp_path))[handle].ok
 
 
 @pytest.mark.parametrize("name", ["../../escaped", "/abs/escaped"])
 async def test_output_members_cannot_escape_dest(tmp_path: Path, name: str):
     dest = tmp_path / "dest"
     async with FakeBackend() as backend:
-        h = (await backend.submit(SPEC)).handles[0]
-        backend.finish(h, files={name: b"x"})
-        outcome = (await backend.get_output([h], dest))[h]
+        handle = (await backend.submit(SPEC)).handles[0]
+        backend.finish(handle, files={name: b"x"})
+        outcome = (await backend.get_output([handle], dest))[handle]
     assert not outcome.ok
     assert not any(p.name == "escaped" for p in tmp_path.rglob("*"))
 
 
 async def test_kill_stops_active_jobs():
     async with FakeBackend() as backend:
-        h = (await backend.submit(SPEC)).handles[0]
-        await backend.kill([h])
-        assert (await backend.get_status([h]))[h] == JobStatus.ABORTED
+        handle = (await backend.submit(SPEC)).handles[0]
+        await backend.kill([handle])
+        assert (await backend.get_status([handle]))[handle] == JobStatus.ABORTED
 
 
 async def test_diagnostics_are_repeatable():
     async with FakeBackend() as backend:
-        h = (await backend.submit(SPEC)).handles[0]
-        backend.finish(h, status=JobStatus.RUNNING, stdout="progress")
+        handle = (await backend.submit(SPEC)).handles[0]
+        backend.finish(handle, status=JobStatus.RUNNING, stdout="progress")
         for _ in range(2):
-            outcome = (await backend.get_diagnostics([h]))[h]
+            outcome = (await backend.get_diagnostics([handle]))[handle]
             assert outcome.value is not None
             assert outcome.value.content == "progress"
 

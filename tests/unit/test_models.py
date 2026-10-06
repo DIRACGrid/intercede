@@ -20,7 +20,7 @@ from intercede import (
 )
 
 
-def handle(job_id: str = "1", **kwargs: object) -> JobHandle:
+def build_default_handle(job_id: str = "1", **kwargs: object) -> JobHandle:
     return JobHandle.model_validate(
         {"backend": "fake", "resource": "r", "id": job_id, **kwargs}
     )
@@ -28,33 +28,33 @@ def handle(job_id: str = "1", **kwargs: object) -> JobHandle:
 
 class TestJobHandle:
     def test_round_trips_through_json(self):
-        h = handle(routing={"schedd": "a"})
-        assert JobHandle.model_validate_json(h.model_dump_json()) == h
+        handle = build_default_handle(routing={"schedd": "a"})
+        assert JobHandle.model_validate_json(handle.model_dump_json()) == handle
 
     def test_is_hashable_with_routing(self):
-        h = handle(routing={"schedd": "a"})
-        assert {h: 1}[handle(routing={"schedd": "a"})] == 1
+        handle = build_default_handle(routing={"schedd": "a"})
+        assert {handle: 1}[build_default_handle(routing={"schedd": "a"})] == 1
 
     def test_same_id_on_different_resources_are_different_keys(self):
-        a = handle(resource="cluster-a")
-        b = handle(resource="cluster-b")
-        assert len({a: 1, b: 2}) == 2
+        handle_a = build_default_handle(resource="cluster-a")
+        handle_b = build_default_handle(resource="cluster-b")
+        assert len({handle_a: 1, handle_b: 2}) == 2
 
     def test_routing_is_part_of_identity(self):
-        assert handle(routing={"schedd": "a"}) != handle(routing={"schedd": "b"})
+        assert build_default_handle(routing={"schedd": "a"}) != build_default_handle(routing={"schedd": "b"})
         assert (
-            len({handle(routing={"schedd": "a"}), handle(routing={"schedd": "b"})}) == 2
+            len({build_default_handle(routing={"schedd": "a"}), build_default_handle(routing={"schedd": "b"})}) == 2
         )
 
     def test_rejects_unknown_fields_and_versions(self):
         with pytest.raises(ValidationError):
-            handle(extra="x")
+            build_default_handle(extra="x")
         with pytest.raises(ValidationError):
-            handle(version=2)
+            build_default_handle(version=2)
 
     def test_is_immutable(self):
         with pytest.raises(ValidationError):
-            handle().id = JobID("2")  # type: ignore[misc]
+            build_default_handle().id = JobID("2")  # type: ignore[misc]
 
 
 class TestCopyVars:
@@ -95,12 +95,12 @@ def test_resources_must_be_positive(field: str):
 
 class TestSubmission:
     def test_handles_are_keyed_by_copy_index(self):
-        sub = Submission(handles={1: handle("a")}, failures={0: "refused"})
+        sub = Submission(handles={1: build_default_handle("a")}, failures={0: "refused"})
         assert sub.handles[1].id == "a"
 
     def test_a_copy_cannot_be_both_submitted_and_refused(self):
         with pytest.raises(ValidationError):
-            Submission(handles={0: handle()}, failures={0: "refused"})
+            Submission(handles={0: build_default_handle()}, failures={0: "refused"})
 
 
 class TestOpOutcome:
