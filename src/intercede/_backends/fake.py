@@ -26,6 +26,7 @@ from intercede.models import (
     JobOutput,
     JobStatus,
     OpOutcome,
+    OutputMember,
     StatusMap,
     Submission,
     SubmissionSpec,
@@ -68,6 +69,7 @@ class FakeBackend:
             when False, a spec that needs it is rejected at submit.
         containers: Whether the resource can run a container image; when False, a
             spec that asks for one is rejected at submit.
+
     """
 
     def __init__(
@@ -147,16 +149,14 @@ class FakeBackend:
     async def get_status(self, handles: Sequence[JobHandle]) -> StatusMap:
         self._check_usable()
 
-        statusMap = {}
-
+        results: dict[JobHandle, JobStatus] = {}
         for handle in handles:
             job = self._find(handle)
-            if job:
-                statusMap[handle] = job.status
+            if job is not None:
+                results[handle] = job.status
             else:
-                statusMap[handle] = JobStatus.UNKNOWN
-
-        return statusMap
+                results[handle] = JobStatus.UNKNOWN
+        return results
 
     # -- optional capabilities --------------------------------------------
 
@@ -241,26 +241,31 @@ class FakeBackend:
 
     def _check_supported(self, spec: SubmissionSpec) -> None:
         # Refuse at submit what the resource cannot honour (IC-ADR-001 §2.3, §2.4).
+        self._check_container_support(spec)
+
+        if not self.resource_staging:
+            self._check_can_fetch(spec.inputs)
+            self._check_can_upload(spec.outputs.members)
+
+    def _check_container_support(self, spec: SubmissionSpec) -> None:
         if spec.container is not None and not self.containers:
             raise SpecificationRejectedError(
                 f"{self.resource} cannot run container images"
             )
-        if not self.resource_staging:
-            if any(_is_url(ref.source) for ref in spec.inputs):
+
+    def _check_can_fetch(self, inputs: Sequence[FileRef]) -> None:
+        for ref in inputs:
+            if _is_url(ref.source):
                 raise SpecificationRejectedError(
                     f"{self.resource} cannot fetch inputs from URLs"
                 )
-            if any(member.destination is not None for member in spec.outputs.members):
+
+    def _check_can_upload(self, members: Sequence[OutputMember]) -> None:
+        for member in members:
+            if member.destination is not None:
                 raise SpecificationRejectedError(
                     f"{self.resource} cannot upload outputs to URLs"
                 )
-
-    def _read_local_inputs(inputs: Sequence[FileRef]) -> dict[str, bytes]:
-        inputs = {}
-        for ref in inputs:
-            if not _is_url(ref.source):
-                inputs[ref.name] = Path(ref.source).read_bytes()
-        return inputs
 
     def _find(self, handle: JobHandle) -> _FakeJob | None:
         if handle.backend != BACKEND or handle.resource != self.resource:
@@ -274,34 +279,74 @@ class FakeBackend:
         if job is not None:
             return (job, None)
         else:
-            return (None, "Unknown job")
+            return (None, "unknown job")
 
     @staticmethod
-    def _write_output(job_id: JobID, job: _FakeJob, dest: Path) -> OpOutcome[JobOutput]:
+    def _read_local_inputs(inputs: Sequence[FileRef]) -> dict[str, bytes]:
+        contents: dict[str, bytes] = {}
+        for ref in inputs:
+            if not _is_url(ref.source):
+                contents[ref.name] = Path(ref.source).read_bytes()
+        return contents
+
+    @staticmethod
+    def _write_output(job_id: JobID, job: _FakeJob, dest: Path,) -> OpOutcome[JobOutput]:
         job_dir = (dest / job_id).resolve()
         files_dir = job_dir / "files"
-        targets = {name: (files_dir / name).resolve() for name in job.files}
-        # Path containment: a member naming an absolute or parent path never
-        # lands outside dest (IC-ADR-001 §3).
-        if escaping := sorted(
-            name for name, path in targets.items() if not path.is_relative_to(files_dir)
-        ):
+
+        targets, escaping = FakeBackend._build_output_targets(files_dir, job.files)
+
+        if escaping:
             return OpOutcome[JobOutput](
-                ok=False, reason=f"members escape the output directory: {escaping}"
+                ok=False,
+                reason=f"members escape the output directory: {escaping}",
             )
 
         job_dir.mkdir(parents=True, exist_ok=True)
+
         stdout = job_dir / "stdout"
         stderr = job_dir / "stderr"
+
         stdout.write_text(job.stdout)
         stderr.write_text(job.stderr)
-        for name, path in targets.items():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(job.files[name])
+
+        FakeBackend._write_job_files(job.files, targets)
+
         return OpOutcome[JobOutput](
-            ok=True, value=JobOutput(stdout=stdout, stderr=stderr, files=targets)
+            ok=True,
+            value=JobOutput(
+                stdout=stdout,
+                stderr=stderr,
+                files=targets,
+            ),
         )
 
+    @staticmethod
+    def _build_output_targets(
+        files_dir: Path,
+        files: Mapping[str, bytes],
+    ) -> tuple[dict[str, Path], list[str]]:
+        targets = {}
+        escaping = []
+
+        for name in files:
+            path = (files_dir / name).resolve()
+
+            if path.is_relative_to(files_dir):
+                targets[name] = path
+            else:
+                escaping.append(name)
+
+        return targets, sorted(escaping)
+
+    @staticmethod
+    def _write_job_files(
+        files: Mapping[str, bytes],
+        targets: Mapping[str, Path],
+    ) -> None:
+        for name, path in targets.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(files[name])
 
 # The type checker proves conformance: these assignments fail mypy if the fake
 # ever drifts from the contract (IC-ADR-001 §4).
