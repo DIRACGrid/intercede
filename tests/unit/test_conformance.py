@@ -66,7 +66,7 @@ async def test_submit_does_not_retain_caller_paths(backend: JobBackend, tmp_path
     )
     source.unlink()  # the caller may delete its files as soon as submit returns
     status = await backend.get_status(list(sub.handles.values()))
-    assert all(s != JobStatus.UNKNOWN for s in status.values())
+    assert all(status != JobStatus.UNKNOWN for status in status.values())
 
 
 async def test_status_answers_every_handle(backend: JobBackend):
@@ -103,9 +103,9 @@ async def test_purge_forgets_the_job(backend: JobBackend):
     if not isinstance(backend, Purgeable):
         pytest.skip("backend cannot purge")
     sub = await backend.submit(SPEC)
-    h = sub.handles[0]
-    assert (await backend.purge([h]))[h].ok
-    assert (await backend.get_status([h]))[h] == JobStatus.UNKNOWN
+    handle = sub.handles[0]
+    assert (await backend.purge([handle]))[handle].ok
+    assert (await backend.get_status([handle]))[handle] == JobStatus.UNKNOWN
 
 
 async def test_output_of_an_unknown_job_fails_per_job(
