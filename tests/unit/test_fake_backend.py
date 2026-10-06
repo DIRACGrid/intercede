@@ -34,7 +34,7 @@ async def test_partial_submission_keeps_copy_indexes():
     assert sorted(sub.failures) == [0, 2]
 
 
-async def test_injected_failure_is_reported_per_job(tmp_path: Path):
+async def test_injected_failure_is_reported_per_job():
     async with FakeBackend(fail_jobs={"1"}) as backend:
         sub = await backend.submit(SPEC, 2)
         good, bad = sub.handles[0], sub.handles[1]
