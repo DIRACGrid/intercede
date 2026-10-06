@@ -322,10 +322,7 @@ class FakeBackend:
         )
 
     @staticmethod
-    def _build_output_targets(
-        files_dir: Path,
-        files: Mapping[str, bytes],
-    ) -> tuple[dict[str, Path], list[str]]:
+    def _build_output_targets(files_dir: Path, files: Mapping[str, bytes]) -> tuple[dict[str, Path], list[str]]:
         targets = {}
         escaping = []
 
@@ -340,10 +337,7 @@ class FakeBackend:
         return targets, sorted(escaping)
 
     @staticmethod
-    def _write_job_files(
-        files: Mapping[str, bytes],
-        targets: Mapping[str, Path],
-    ) -> None:
+    def _write_job_files(files: Mapping[str, bytes], targets: Mapping[str, Path]) -> None:
         for name, path in targets.items():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(files[name])
