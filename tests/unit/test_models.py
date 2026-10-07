@@ -41,9 +41,17 @@ class TestJobHandle:
         assert len({handle_a: 1, handle_b: 2}) == 2
 
     def test_routing_is_part_of_identity(self):
-        assert build_default_handle(routing={"schedd": "a"}) != build_default_handle(routing={"schedd": "b"})
+        assert build_default_handle(routing={"schedd": "a"}) != build_default_handle(
+            routing={"schedd": "b"}
+        )
         assert (
-            len({build_default_handle(routing={"schedd": "a"}), build_default_handle(routing={"schedd": "b"})}) == 2
+            len(
+                {
+                    build_default_handle(routing={"schedd": "a"}),
+                    build_default_handle(routing={"schedd": "b"}),
+                }
+            )
+            == 2
         )
 
     def test_rejects_unknown_fields_and_versions(self):
@@ -95,7 +103,9 @@ def test_resources_must_be_positive(field: str):
 
 class TestSubmission:
     def test_handles_are_keyed_by_copy_index(self):
-        sub = Submission(handles={1: build_default_handle("a")}, failures={0: "refused"})
+        sub = Submission(
+            handles={1: build_default_handle("a")}, failures={0: "refused"}
+        )
         assert sub.handles[1].id == "a"
 
     def test_a_copy_cannot_be_both_submitted_and_refused(self):

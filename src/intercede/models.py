@@ -73,7 +73,7 @@ WorkdirName = Annotated[str, AfterValidator(_check_in_workdir)]
 class Resources(_Model):
     """What a job asks of the resource."""
 
-    cpus: PositiveInt = 1 # resources must never be 0 or negative, and will be rejected
+    cpus: PositiveInt = 1  # resources must never be 0 or negative, and will be rejected
     memory_mb: PositiveInt | None = None
     wall_time_s: PositiveInt | None = None
     queue: str | None = None
