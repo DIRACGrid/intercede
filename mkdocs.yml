@@ -1,0 +1,25 @@
+site_name: interCEde
+site_description: Unified interfaces to Computing Elements and batch systems for DIRAC / DiracX
+repo_url: https://github.com/DIRACGrid/intercede
+
+theme:
+  name: material
+  logo: assets/intercede-icon.svg
+  favicon: assets/intercede-icon.svg
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            members_order: source
+            merge_init_into_class: true
+
+validation:
+  links:
+    # The developer docs link to repository files outside docs/ (e.g. renovate.json),
+    # which resolve on GitHub but not in the built site.
+    not_found: info
