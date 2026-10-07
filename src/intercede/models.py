@@ -123,7 +123,7 @@ class SubmissionSpec(_Model):
     executable: str
     arguments: Sequence[str] = ()
     inputs: Sequence[FileRef] = ()
-    outputs: OutputSpec = OutputSpec()
+    outputs: OutputSpec | None = None
     resources: Resources = Resources()
     environment: Mapping[str, str] = {}
     container: ContainerSpec | None = None
