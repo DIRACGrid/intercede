@@ -243,9 +243,15 @@ class FakeBackend:
         # Refuse at submit what the resource cannot honour (IC-ADR-001 §2.3, §2.4).
         self._check_container_support(spec)
 
+
         if not self.resource_staging:
             self._check_can_fetch(spec.inputs)
-            self._check_can_upload(spec.outputs.members)
+            if spec.outputs is not None:
+                self._check_can_upload(spec.outputs.members)
+            else:
+                raise SpecificationRejectedError(
+                    f"tag: {spec.tag} contains no outputs"
+                )
 
     def _check_container_support(self, spec: SubmissionSpec) -> None:
         if spec.container is not None and not self.containers:
