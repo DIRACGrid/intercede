@@ -25,19 +25,19 @@ async def backend(request: pytest.FixtureRequest) -> AsyncIterator[JobBackend]:
 
     backend_only_marker = request.node.get_closest_marker("backend_only")
     if (
-        backend_only_marker is not None 
+        backend_only_marker is not None
         and name not in backend_only_marker.args
     ):
         pytest.skip(f"only runs on {', '.join(backend_only_marker.args)}")
 
     xfail_marker = request.node.get_closest_marker("xfail_backend")
     if (
-        xfail_marker is not None 
+        xfail_marker is not None
         and name in xfail_marker.args
     ):
         request.applymarker(
             pytest.mark.xfail(
-                strict=True, 
+                strict=True,
                 reason=f"known failure on {name}"
             )
         )
