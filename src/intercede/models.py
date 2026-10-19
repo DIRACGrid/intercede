@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Annotated, Generic, Literal, NewType, Self, TypeVar
+from urllib.parse import quote
 
 from pydantic import (
     AfterValidator,
@@ -160,17 +161,15 @@ class JobHandle(_Model):
     id: JobID
     routing: Mapping[str, str] = {}  # backend-specific, opaque to consumers
 
+    @property
+    def key(self) -> str:
+        return ":".join(quote(part) for part in (self.backend, self.resource, self.id))
+
+    def __str__(self) -> str:
+        return self.key
+
     def __hash__(self) -> int:
-        # The default hash of a frozen model fails on the routing dict.
-        return hash(
-            (
-                self.version,
-                self.backend,
-                self.resource,
-                self.id,
-                frozenset(self.routing.items()),
-            )
-        )
+        return hash(self.key)
 
 
 class JobStatus(StrEnum):
