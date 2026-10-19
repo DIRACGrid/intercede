@@ -5,10 +5,13 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_version
 
+from intercede import registry
+from intercede.config import BackendConfig
 from intercede.exceptions import (
     AuthenticationError,
     ConfigurationError,
     InterCEdeError,
+    RegistryError,
     ResourceUnavailableError,
     SpecificationRejectedError,
 )
@@ -47,6 +50,7 @@ version = __version__
 
 __all__ = [
     "__version__",
+    "registry",
     # protocols
     "Diagnosable",
     "JobBackend",
@@ -71,10 +75,13 @@ __all__ = [
     "StatusMap",
     "Submission",
     "SubmissionSpec",
+    # configuration
+    "BackendConfig",
     # exceptions
     "AuthenticationError",
     "ConfigurationError",
     "InterCEdeError",
+    "RegistryError",
     "ResourceUnavailableError",
     "SpecificationRejectedError",
 ]

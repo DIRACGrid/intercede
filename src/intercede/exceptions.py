@@ -10,6 +10,7 @@ __all__ = [
     "AuthenticationError",
     "ConfigurationError",
     "InterCEdeError",
+    "RegistryError",
     "ResourceUnavailableError",
     "SpecificationRejectedError",
 ]
@@ -33,3 +34,11 @@ class ResourceUnavailableError(InterCEdeError):
 
 class SpecificationRejectedError(InterCEdeError):
     """The backend cannot honour this specification, so no copy was submitted."""
+
+
+class RegistryError(InterCEdeError):
+    """The registry cannot provide what a valid configuration asks for.
+
+    Either this version of interCEde does not ship it, or its registry entry is
+    broken: it cannot be imported, or what it builds does not satisfy its protocol.
+    """
