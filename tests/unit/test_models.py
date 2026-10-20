@@ -137,3 +137,96 @@ class TestOpOutcome:
     def test_failure_cannot_carry_a_value(self):
         with pytest.raises(ValidationError):
             OpOutcome[JobOutput](ok=False, reason="x", value=JobOutput())
+
+
+class TestJobHandleKey:
+    def test_key_joins_backend_resource_and_id(self):
+        assert build_default_handle("7").key == "fake:r:7"
+
+    def test_str_is_the_key(self):
+        handle = build_default_handle("7")
+        assert str(handle) == handle.key
+
+    def test_separators_inside_parts_are_escaped(self):
+        # Without escaping, ("a:b", "c") and ("a", "b:c") would share a key.
+        first = build_default_handle("c", resource="a:b")
+        second = build_default_handle("b:c", resource="a")
+        assert first.key != second.key
+        assert first.key.count(":") == 2
+
+    def test_equal_handles_hash_equal(self):
+        assert hash(build_default_handle("1")) == hash(build_default_handle("1"))
+
+    @pytest.mark.parametrize("field", ["backend", "resource", "id"])
+    def test_every_identity_field_changes_the_key(self, field: str):
+        assert (
+            build_default_handle().key != build_default_handle(**{field: "other"}).key
+        )
+
+    def test_defaults(self):
+        handle = build_default_handle()
+        assert handle.version == 1
+        assert handle.routing == {}
+
+
+class TestOpOutcomeUnparametrised:
+    def test_success_without_a_type_needs_no_value(self):
+        assert OpOutcome(ok=True).ok
+
+    def test_failure_without_a_type_still_needs_a_reason(self):
+        with pytest.raises(ValidationError):
+            OpOutcome(ok=False)
+
+
+class TestDefaults:
+    def test_submission_spec(self):
+        spec = SubmissionSpec(executable="x")
+        assert spec.outputs is None
+        assert spec.container is None
+        assert (spec.stdout, spec.stderr, spec.tag) == (None, None, None)
+        assert tuple(spec.arguments) == ()
+        assert spec.resources == Resources()
+
+    def test_resources(self):
+        resources = Resources()
+        assert resources.cpus == 1
+        assert (resources.memory_mb, resources.wall_time_s, resources.queue) == (
+            None,
+            None,
+            None,
+        )
+
+    def test_job_output(self):
+        output = JobOutput()
+        assert (output.stdout, output.stderr, output.log) == (None, None, None)
+        assert output.files == {}
+
+    def test_empty_submission_is_valid(self):
+        submission = Submission(handles={})
+        assert submission.failures == {}
+
+
+@pytest.mark.parametrize("value", [1, 2**31])
+def test_positive_resources_are_accepted(value: int):
+    assert Resources(cpus=value, memory_mb=value, wall_time_s=value).cpus == value
+
+
+def test_job_status_values_are_stable():
+    """Stored statuses are compared by value: renaming one is a breaking change."""
+    from intercede import JobStatus
+
+    assert {status.value for status in JobStatus} == {
+        "Submitted",
+        "Waiting",
+        "Running",
+        "Done",
+        "Failed",
+        "Aborted",
+        "Unknown",
+    }
+
+
+@pytest.mark.parametrize("field", ["stdout", "stderr"])
+@pytest.mark.parametrize("name", ["job.out", "logs/job.out"])
+def test_stdout_and_stderr_names_are_accepted(field: str, name: str):
+    assert getattr(SubmissionSpec(executable="x", **{field: name}), field) == name

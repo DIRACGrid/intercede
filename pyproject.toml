@@ -37,6 +37,7 @@ Repository = "https://github.com/DIRACGrid/intercede"
 testing = [
   "pytest",
   "pytest-asyncio",
+  "pytest-cov",
   "pytest-xdist",
   "ty",
 ]
@@ -48,6 +49,19 @@ asyncio_mode = "auto"
 markers = [
   "backend_only: restrict a test to the named backend fixture(s)",
   "xfail_backend: strict xfail a test on the named backend fixture(s)",
+]
+
+[tool.coverage.run]
+branch = true
+patch = ["subprocess"]  # also measure the tests that start a fresh interpreter
+source = ["intercede"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "^\\s*\\.\\.\\.$",  # protocol method bodies
 ]
 
 [tool.mypy]
