@@ -23,6 +23,7 @@ from intercede import (
 )
 from intercede._backends.config import FakeSettings
 from intercede._backends.fake import FakeBackend
+from intercede.auth import StaticCredentials
 
 SPEC = SubmissionSpec(executable="/bin/true")
 
@@ -238,7 +239,9 @@ class TestLifecycle:
             assert (await backend.submit(SPEC)).handles
 
     async def test_from_settings(self):
-        backend = FakeBackend.from_settings(FakeSettings(resource="fake://elsewhere"))
+        backend = FakeBackend.from_settings(
+            FakeSettings(resource="fake://elsewhere"), StaticCredentials()
+        )
         async with backend:
             handle = (await backend.submit(SPEC)).handles[0]
         assert handle.resource == "fake://elsewhere"

@@ -7,6 +7,8 @@ configuration asks for it, so installing interCEde never imports every backend.
 
 Every registered class provides a ``from_settings`` classmethod, which is how
 the registry builds it from the validated settings of ``_backends.config``.
+The parts that authenticate (single-class backends and transports) also
+receive the consumer's credential provider; a scheduler only builds commands.
 What it builds is checked against the relevant protocol before it is returned,
 so a broken entry fails here, with a clear error, and not at the first call.
 """
@@ -27,6 +29,7 @@ from intercede._backends.config import (
     FakeSettings,
     resolve,
 )
+from intercede.auth.protocols import CredentialProvider
 from intercede.config import BackendConfig
 from intercede.exceptions import ConfigurationError, RegistryError
 from intercede.protocols import JobBackend
@@ -52,18 +55,27 @@ _GROUPS: dict[str, dict[str, str]] = {
 }
 
 
-def backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
+def backend(
+    config: BackendConfig | Mapping[str, Any], credentials: CredentialProvider
+) -> JobBackend:
     """Build the backend a configuration describes.
 
-    The backend is returned unopened: use it as ``async with registry.backend(config) as ce``.
-    Construction does no I/O, so building a backend for an unreachable resource succeeds.
+    The backend is returned unopened: use it as
+    ``async with registry.backend(config, credentials) as ce``. Construction does
+    no I/O and asks the provider for nothing, so building a backend for an
+    unreachable resource succeeds. The backend asks for credentials when it
+    first needs them, and again when they are about to expire.
 
     Args:
         config: A ``BackendConfig``, or the same data as a mapping, for example
             a parsed TOML table.
+        credentials: The consumer's provider (IC-ADR-003). The consumer opens
+            and closes it; interCEde never does. One provider is normally
+            shared by every backend a task drives.
 
     Raises:
-        ConfigurationError: The configuration is invalid.
+        ConfigurationError: The configuration is invalid, or ``credentials``
+            is not a ``CredentialProvider``.
         RegistryError: The configuration is valid, but this version of
             interCEde does not provide what it asks for.
 
@@ -73,7 +85,11 @@ def backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
             config = BackendConfig.model_validate(config)
         except ValidationError as exc:
             raise ConfigurationError(str(exc)) from exc
-    return _build(resolve(config))
+    if not isinstance(credentials, CredentialProvider):
+        raise ConfigurationError(
+            f"credentials must be a CredentialProvider, not a {type(credentials).__name__}"
+        )
+    return _build(resolve(config), credentials)
 
 
 def available() -> dict[str, tuple[str, ...]]:
@@ -108,10 +124,12 @@ def _choices(annotation: Any) -> set[str]:
     return values
 
 
-def _build(settings: BackendSettings | FakeSettings) -> JobBackend:
+def _build(
+    settings: BackendSettings | FakeSettings, credentials: CredentialProvider
+) -> JobBackend:
     """Build a backend from validated settings. Internal: the test suites call it directly."""
     if not isinstance(settings, BatchSettings):
-        built = _load("backend", settings.kind).from_settings(settings)
+        built = _load("backend", settings.kind).from_settings(settings, credentials)
         result: JobBackend = _checked("backend", settings.kind, built, JobBackend)
         return result
 
@@ -119,7 +137,9 @@ def _build(settings: BackendSettings | FakeSettings) -> JobBackend:
     transport: Transport = _checked(
         "transport",
         transport_kind,
-        _load("transport", transport_kind).from_settings(settings.transport),
+        _load("transport", transport_kind).from_settings(
+            settings.transport, credentials
+        ),
         Transport,
     )
     scheduler: Scheduler = _checked(

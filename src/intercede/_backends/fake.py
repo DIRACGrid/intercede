@@ -13,6 +13,7 @@ from types import TracebackType
 from typing import Callable, Self
 
 from intercede._backends.config import FakeSettings
+from intercede.auth.protocols import CredentialProvider
 from intercede.exceptions import (
     InterCEdeError,
     ResourceUnavailableError,
@@ -94,8 +95,14 @@ class FakeBackend:
         self._closed = False
 
     @classmethod
-    def from_settings(cls, settings: FakeSettings) -> Self:
-        """Build the fake from its settings; how the registry constructs it."""
+    def from_settings(
+        cls, settings: FakeSettings, credentials: CredentialProvider
+    ) -> Self:
+        """Build the fake from its settings; how the registry constructs it.
+
+        Nothing leaves the process, so the fake needs no credentials and never
+        asks ``credentials`` for any.
+        """
         return cls(resource=settings.resource)
 
     # -- lifecycle ---------------------------------------------------------
@@ -365,4 +372,6 @@ _output: type[OutputRetriever] = FakeBackend
 _kill: type[Killable] = FakeBackend
 _purge: type[Purgeable] = FakeBackend
 _diag: type[Diagnosable] = FakeBackend
-_built_by_registry: Callable[[FakeSettings], JobBackend] = FakeBackend.from_settings
+_built_by_registry: Callable[[FakeSettings, CredentialProvider], JobBackend] = (
+    FakeBackend.from_settings
+)

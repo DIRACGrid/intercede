@@ -12,6 +12,14 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal, Self
 
 from pydantic import Discriminator, PositiveInt, TypeAdapter, model_validator
 
+from intercede.auth.models import (
+    BearerToken,
+    Credential,
+    CredentialRequirements,
+    SSHPassword,
+    SSHPrivateKey,
+    X509Proxy,
+)
 from intercede.models import _Model
 
 if TYPE_CHECKING:
@@ -19,6 +27,15 @@ if TYPE_CHECKING:
 
 LIMIT_FIELDS = ("max_output_bytes", "max_output_files", "transfer_timeout_s")
 SSH_FIELDS = ("host", "port", "user", "known_hosts", "jump_host", "connect_timeout_s")
+
+# What each configured auth mode asks the credential provider for (IC-ADR-003).
+# "agent" is absent on purpose: an SSH agent holds the key, so nothing is asked.
+AUTH_KINDS: dict[str, type[Credential]] = {
+    "token": BearerToken,
+    "proxy": X509Proxy,
+    "key": SSHPrivateKey,
+    "password": SSHPassword,
+}
 
 
 class Limits(_Model):
@@ -45,12 +62,28 @@ class _BackendSettings(_Model):
 # -- monolithic backends ------------------------------------------------------
 
 
-class ARCSettings(_BackendSettings):
-    kind: Literal["arc"]
+class _CESettings(_BackendSettings):
     endpoint: str
+    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
+
+    def credential_requirements(
+        self, scopes: frozenset[str] = frozenset()
+    ) -> CredentialRequirements:
+        """Say what to ask the provider for; ``scopes`` are those of one operation.
+
+        The endpoint is the resource, so a token is minted for this CE's audience.
+        """
+        return CredentialRequirements(
+            resource=self.endpoint,
+            kinds=frozenset(AUTH_KINDS[mode] for mode in self.auth),
+            scopes=scopes,
+        )
+
+
+class ARCSettings(_CESettings):
+    kind: Literal["arc"]
     # All of these together (IC-ADR-003 §2): a token for the channel, a proxy
     # for delegation, or both.
-    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
 
     @model_validator(mode="after")
     def _auth_not_empty(self) -> Self:
@@ -59,12 +92,10 @@ class ARCSettings(_BackendSettings):
         return self
 
 
-class HTCondorCESettings(_BackendSettings):
+class HTCondorCESettings(_CESettings):
     kind: Literal["htcondor-ce"]
-    endpoint: str
     # The token authenticates the channel; "proxy" adds an X.509 proxy to the
     # submit description for sites that account on VOMS attributes.
-    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
 
     @model_validator(mode="after")
     def _token_required(self) -> Self:
@@ -123,6 +154,10 @@ class CloudSettings(_Model):
 class LocalTransportSettings(_Model):
     kind: Literal["local"]
 
+    def credential_requirements(self) -> None:
+        """Ask for nothing: running commands on this host needs no credential."""
+        return None
+
 
 class SSHTransportSettings(_Model):
     kind: Literal["ssh"]
@@ -140,6 +175,19 @@ class SSHTransportSettings(_Model):
             raise ValueError("known_hosts must hold the expected host keys")
         return self
 
+    def credential_requirements(self) -> CredentialRequirements | None:
+        """Say what to ask the provider for, or None when an SSH agent holds the key.
+
+        The resource is the login, ``user@host:port``: a provider finds the key
+        or password by it, and the same host can take different users.
+        """
+        if self.auth == "agent":
+            return None
+        return CredentialRequirements(
+            resource=f"{self.user}@{self.host}:{self.port}",
+            kinds=frozenset({AUTH_KINDS[self.auth]}),
+        )
+
 
 class BatchSettings(_BackendSettings):
     kind: Literal["batch"]
@@ -147,6 +195,10 @@ class BatchSettings(_BackendSettings):
         LocalTransportSettings | SSHTransportSettings, Discriminator("kind")
     ]
     scheduler: Literal["slurm", "htcondor", "direct"]
+
+    def credential_requirements(self) -> CredentialRequirements | None:
+        """Ask for what the transport needs; the scheduler only builds commands."""
+        return self.transport.credential_requirements()
 
 
 BackendSettings = Annotated[

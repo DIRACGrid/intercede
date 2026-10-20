@@ -18,6 +18,13 @@ from intercede._backends.config import (
     SSHTransportSettings,
     resolve,
 )
+from intercede.auth import (
+    BearerToken,
+    CredentialRequirements,
+    SSHPassword,
+    SSHPrivateKey,
+    X509Proxy,
+)
 
 SSH: dict[str, Any] = {
     "kind": "batch",
@@ -570,3 +577,82 @@ def test_container_launcher_placeholder_may_be_inside_an_argument():
 
 def test_known_hosts_of_only_whitespace_is_refused():
     assert "known_hosts" in rejected(**{**SSH, "known_hosts": "\n\t "})
+
+
+# --------------------------------------------------------------------------
+# From configured auth mode to credential requirements (IC-ADR-003 §2)
+# --------------------------------------------------------------------------
+
+
+def requirements_of(
+    data: dict[str, Any], **scopes: Any
+) -> CredentialRequirements | None:
+    settings: Any = resolve(BackendConfig.model_validate(data))
+    return settings.credential_requirements(**scopes)  # type: ignore[no-any-return]
+
+
+class TestCredentialRequirements:
+    @pytest.mark.parametrize("shape", ["arc", "htcondor-ce"])
+    @pytest.mark.parametrize(
+        ("auth", "kinds"),
+        [
+            (None, {BearerToken}),  # the default
+            (["token"], {BearerToken}),
+            (["token", "proxy"], {BearerToken, X509Proxy}),
+        ],
+        ids=["default", "token", "token+proxy"],
+    )
+    def test_ce(self, shape: str, auth: list[str] | None, kinds: set[type]):
+        requirements = requirements_of({**BASES[shape], "auth": auth})
+        assert requirements is not None
+        assert requirements.kinds == kinds
+        assert requirements.resource == BASES[shape]["endpoint"]
+        assert requirements.scopes == frozenset()
+
+    def test_arc_proxy_only(self):
+        requirements = requirements_of({**BASES["arc"], "auth": ["proxy"]})
+        assert requirements is not None and requirements.kinds == {X509Proxy}
+
+    @pytest.mark.parametrize("shape", ["arc", "htcondor-ce"])
+    def test_ce_scopes_are_per_operation(self, shape: str):
+        scopes = frozenset({"compute.create"})
+        requirements = requirements_of(BASES[shape], scopes=scopes)
+        assert requirements is not None and requirements.scopes == scopes
+
+    @pytest.mark.parametrize(
+        ("auth", "kinds"),
+        [
+            (None, {SSHPrivateKey}),
+            (["key"], {SSHPrivateKey}),
+            (["password"], {SSHPassword}),
+        ],
+        ids=["default", "key", "password"],
+    )
+    def test_ssh(self, auth: list[str] | None, kinds: set[type]):
+        requirements = requirements_of({**SSH, "auth": auth})
+        assert requirements is not None
+        assert requirements.kinds == kinds
+        assert requirements.scopes == frozenset()  # no notion of scope for SSH
+
+    def test_ssh_resource_is_the_login(self):
+        requirements = requirements_of({**SSH, "port": 2222})
+        assert requirements is not None
+        assert requirements.resource == "dirac@batch.example.org:2222"
+
+    def test_ssh_resource_tells_users_on_one_host_apart(self):
+        first = requirements_of(SSH)
+        second = requirements_of({**SSH, "user": "other"})
+        assert first is not None and second is not None
+        assert first.resource != second.resource
+
+    def test_ssh_agent_asks_for_nothing(self):
+        assert requirements_of({**SSH, "auth": ["agent"]}) is None
+
+    def test_local_transport_asks_for_nothing(self):
+        assert requirements_of(BASES["batch-local"]) is None
+
+    def test_every_auth_mode_maps_to_a_kind_or_to_nothing(self):
+        from intercede._backends.config import AUTH_KINDS
+
+        assert set(AUTH_KINDS) == {"token", "proxy", "key", "password"}
+        assert "agent" not in AUTH_KINDS
