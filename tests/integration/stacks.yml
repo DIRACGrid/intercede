@@ -1,0 +1,22 @@
+# Integration CI matrix. Schema: docs/dev/reference/integration-stacks.md
+stacks:
+  - id: arc-slurm
+    configs: [basic]
+    versions: [latest]
+    markers: "remote and arc"
+
+  - id: htcondor
+    configs: [basic]
+    versions: [lts, latest]
+    markers: "remote and htcondor"
+
+  - id: ssh-slurm
+    compose: slurm
+    configs: [basic]
+    markers: "scheduler and slurm"
+
+  - id: local-slurm
+    compose: slurm
+    configs: [basic]
+    markers: "scheduler and slurm and not ssh" # ssh tests already run in ssh-slurm
+    exec_in_container: true
