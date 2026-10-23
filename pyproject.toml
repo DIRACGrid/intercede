@@ -17,7 +17,9 @@ requires-python = ">=3.11"
 keywords = []
 license = { text = "GPL-3.0-only" }
 dynamic = ["version"]
-dependencies = []
+dependencies = [
+  "pydantic>=2"
+]
 classifiers = [
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
@@ -35,13 +37,11 @@ Repository = "https://github.com/DIRACGrid/intercede"
 testing = [
   "pytest",
   "pytest-asyncio",
+  "pytest-cov",
   "pytest-xdist",
   "pyyaml",
   "ty",
 ]
-
-[tool.setuptools.packages.find]
-where = ["src"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
@@ -60,6 +60,23 @@ markers = [
   "destructive_fetch: asserts one-shot/destructive output-retrieval semantics",
 ]
 
+[tool.coverage.run]
+branch = true
+patch = ["subprocess"]  # also measure the tests that start a fresh interpreter
+source = ["intercede"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = [
+  "if TYPE_CHECKING:",
+  "^\\s*\\.\\.\\.$",  # protocol method bodies
+]
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src"]
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -122,6 +139,7 @@ py311 = { features = ["testing", "py311"] }
 py312 = { features = ["testing", "py312"] }
 py313 = { features = ["testing", "py313"] }
 py314 = { features = ["testing", "py314"] }
+docs = { features = ["docs"], solve-group = "default" }
 
 [tool.pixi.feature.testing.pypi-dependencies]
 intercede = { path = ".", editable = true }
@@ -132,6 +150,16 @@ intercede = { path = ".", editable = true }
 pre-commit = "*"
 [tool.pixi.feature.pre-commit.tasks]
 pre-commit = { cmd = "pre-commit", description = "Run pre-commit" }
+
+
+# Features for building the documentation
+[tool.pixi.feature.docs.pypi-dependencies]
+intercede = { path = ".", editable = true }
+mkdocs = "<2"
+mkdocs-material = "*"
+mkdocstrings = { version = "*", extras = ["python"] }
+[tool.pixi.feature.docs.tasks]
+docs = { cmd = "mkdocs build --strict", description = "Build the documentation" }
 
 
 [tool.pixi.tasks]
