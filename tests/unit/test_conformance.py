@@ -1,7 +1,7 @@
 """Unit conformance suite: what every backend must do, written against the contract only.
 
 Tests here use nothing but the public API, so the same suite runs against real
-backends in the integration stacks (IC-ADR-002). Behaviour that needs a test
+backends in the integration stacks. Behaviour that needs a test
 hook (finishing a job, injecting failures) lives in ``test_fake_backend.py``.
 """
 
@@ -22,6 +22,7 @@ from intercede import (
     Killable,
     OutputRetriever,
     Purgeable,
+    SpecificationRejectedError,
     SubmissionSpec,
 )
 
@@ -124,3 +125,16 @@ async def test_close_is_idempotent(backend: JobBackend):
     await backend.__aexit__(None, None, None)
     with pytest.raises(InterCEdeError):
         await backend.submit(SPEC)
+
+
+async def test_a_secret_named_like_an_input_is_refused(
+    backend: JobBackend, tmp_path: Path
+):
+    source = tmp_path / "pilot.cfg"
+    source.write_text("data")
+    spec = SubmissionSpec(
+        executable="/bin/true", inputs=[FileRef(name="pilot.cfg", source=str(source))]
+    )
+    clashing = [CopyVars(), CopyVars(secrets={"pilot.cfg": b"s"})]
+    with pytest.raises(SpecificationRejectedError, match="pilot.cfg"):
+        await backend.submit(spec, clashing)

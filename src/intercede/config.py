@@ -1,4 +1,4 @@
-"""Backend configuration: how a consumer says which backend it wants (IC-ADR-001 §5).
+"""Backend configuration: how a consumer says which backend it wants.
 
 One flat model describes every backend. ``kind`` picks the backend; a ``batch``
 backend also picks a ``transport`` and a ``scheduler``. Only the fields that
@@ -6,7 +6,7 @@ apply to that choice may be set, and the model is checked when it is built, so
 a mistake is reported here rather than at the first submit.
 
 Configuration describes the resource and is never secret: keys, passwords,
-tokens and proxies come from the credential provider at run time (IC-ADR-003).
+tokens and proxies come from the credential provider at run time.
 The kinds are a closed set: they list what interCEde ships.
 """
 
@@ -67,7 +67,7 @@ class BackendConfig(_Model):
     """
 
     # What to use. ``kind`` is also what ``JobHandle.backend`` records.
-    # Three families (IC-ADR-001 §4): grid CEs that schedule by themselves
+    # Three families: grid CEs that schedule by themselves
     # ("arc", "htcondor-ce"), a cloud provider that boots a VM per job
     # ("cloud"), and a batch system reached through a transport ("batch").
     kind: Literal["arc", "htcondor-ce", "cloud", "batch"]
@@ -103,10 +103,10 @@ class BackendConfig(_Model):
     # How to run jobs there.
     queue: str | None = None  # used when the spec does not name one
     # An argv template wrapping the executable in a container, e.g.
-    # ["apptainer", "exec", "--bind", "/cvmfs", "{image}"] (IC-ADR-001 §2.4).
+    # ["apptainer", "exec", "--bind", "/cvmfs", "{image}"].
     container_launcher: Sequence[str] | None = None
 
-    # Deployment policy for output collection (IC-ADR-001 §3); defaults apply when unset.
+    # Deployment policy for output collection; defaults apply when unset.
     max_output_bytes: PositiveInt | None = None
     max_output_files: PositiveInt | None = None
     transfer_timeout_s: PositiveInt | None = None
