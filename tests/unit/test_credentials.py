@@ -1,4 +1,4 @@
-"""When a backend asks its provider again, and what it accepts back (IC-ADR-003 §3)."""
+"""When a backend asks its provider again, and what it accepts back."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ class TestRefreshIfStale:
 
 
 class TestProviderFailures:
-    """Every failure is a whole-operation AuthenticationError (IC-ADR-003 §3)."""
+    """Every failure is a whole-operation AuthenticationError."""
 
     async def test_provider_raising_is_an_authentication_error(self):
         provider = Recording(error=RuntimeError("token service down"))

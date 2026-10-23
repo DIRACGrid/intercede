@@ -1,4 +1,4 @@
-"""The public protocol for a ``CredentialProvider`` (IC-ADR-003 §3)."""
+"""The public protocol for a ``CredentialProvider``."""
 
 from __future__ import annotations
 
@@ -22,10 +22,20 @@ class CredentialProvider(Protocol):
     """
 
     async def get(self, requirements: CredentialRequirements) -> CredentialSet:
-        """Return the credentials ``requirements`` names, all of them together.
+        """Return the credentials a backend needs, all of them together.
 
-        Raising here is a whole-operation failure: the backend reports it as an
-        ``AuthenticationError``, never as a per-job outcome.
+        Args:
+            requirements: The resource, the kinds of credential it takes, and
+                the scopes of the operation about to run.
+
+        Returns:
+            One credential of every kind in ``requirements.kinds``.
+
+        Raises:
+            Exception: Anything raised here fails the whole operation: the
+                backend reports it as an ``AuthenticationError``, never as a
+                per-job outcome.
+
         """
         ...
 

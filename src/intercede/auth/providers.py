@@ -1,4 +1,4 @@
-"""Ready-made credential providers (IC-ADR-003 §8)."""
+"""Ready-made credential providers."""
 
 from __future__ import annotations
 

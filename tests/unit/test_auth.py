@@ -1,4 +1,4 @@
-"""Credential values, sets, requirements and the static provider (IC-ADR-003)."""
+"""Credential values, sets, requirements and the static provider."""
 
 from __future__ import annotations
 

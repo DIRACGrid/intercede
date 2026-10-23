@@ -1,4 +1,4 @@
-"""The public credential models a consumer of interCEde can use (IC-ADR-003 §1, §2).
+"""The public credential models a consumer of interCEde can use.
 
 Credentials are immutable values. Secret material is held in pydantic's secret
 types, so a credential cannot be printed or logged by accident: ``repr``,
@@ -87,7 +87,7 @@ class CredentialSet(RootModel[tuple[AnyCredential, ...]]):
     """The credentials a provider returns: at most one of each kind.
 
     A set rather than a single value, because a backend can need several kinds
-    together (IC-ADR-003 §1)::
+    together::
 
         CredentialSet([BearerToken(value=token), X509Proxy(pem=proxy)])
     """
@@ -137,7 +137,7 @@ class CredentialSet(RootModel[tuple[AnyCredential, ...]]):
 
 
 class CredentialRequirements(_Model):
-    """What a backend asks its provider for (IC-ADR-003 §2).
+    """What a backend asks its provider for.
 
     The backend computes it from its own configuration and keeps it to itself:
     a consumer only meets it as the argument to its provider's ``get``.

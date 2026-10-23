@@ -1,4 +1,4 @@
-"""Backend credentials: typed, declared, supplied by a provider (IC-ADR-003).
+"""Backend credentials: typed, declared, supplied by a provider.
 
 A consumer implements a ``CredentialProvider`` and returns ``CredentialSet``
 values from it. Configuration never holds a secret: it only says which kinds

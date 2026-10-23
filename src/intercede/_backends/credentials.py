@@ -1,4 +1,4 @@
-"""When a backend asks its credential provider, and what it accepts back (IC-ADR-003 §3).
+"""When a backend asks its credential provider, and what it accepts back.
 
 This is the one place freshness is decided. A backend keeps the set it was
 last given, privately, and before each operation calls ``refresh_if_stale``:
@@ -16,8 +16,8 @@ from intercede.auth.protocols import CredentialProvider
 from intercede.exceptions import AuthenticationError, InterCEdeError
 
 # Ask again this long before a credential expires, so it cannot run out in the
-# middle of an operation. A library default (IC-ADR-003 §3); whether and how a
-# provider may raise it is one of the ADR's open issues.
+# middle of an operation. A library default; whether a provider should be able
+# to change it is still open.
 DEFAULT_MARGIN = timedelta(minutes=5)
 
 
@@ -62,7 +62,7 @@ async def refresh_if_stale(
     Raises:
         AuthenticationError: The provider failed, left out a required kind, or
             returned a credential that has already expired. Always a failure of
-            the whole operation, never a per-job outcome (IC-ADR-003 §3).
+            the whole operation, never a per-job outcome.
 
     """
     if not is_stale(current, requirements, margin=margin, now=now):

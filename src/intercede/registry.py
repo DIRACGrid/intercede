@@ -69,7 +69,7 @@ def backend(
     Args:
         config: A ``BackendConfig``, or the same data as a mapping, for example
             a parsed TOML table.
-        credentials: The consumer's provider (IC-ADR-003). The consumer opens
+        credentials: The consumer's provider. The consumer opens
             and closes it; interCEde never does. One provider is normally
             shared by every backend a task drives.
 

@@ -265,7 +265,7 @@ class TestRules:
 
 
 # --------------------------------------------------------------------------
-# From configured auth mode to credential requirements (IC-ADR-003 §2)
+# From configured auth mode to credential requirements
 # --------------------------------------------------------------------------
 
 

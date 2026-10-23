@@ -107,7 +107,7 @@ class TestBuilds:
 
         registry.backend(SSH_SLURM, Watching())
         registry.backend(CLOUD, Watching())
-        assert Watching.asked == 0  # construction does no I/O (IC-ADR-001 §3)
+        assert Watching.asked == 0  # construction does no I/O
 
 
 class TestRefused:
