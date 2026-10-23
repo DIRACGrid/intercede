@@ -1,11 +1,7 @@
-"""Session-wide pytest options for interCEde (must live at the tests/ root).
+"""Pytest options for the integration suite.
 
-``--stack``/``--config`` are consumed by the integration suite (tests/integration/conftest.py), but
-pytest only honours ``pytest_addoption`` from *initial* conftest files — those in the rootdir and
-the invocation's target directories. Registering the options here (the root of ``testpaths``) means
-every invocation form accepts them: bare ``pytest``, ``pytest tests`` and
-``pytest tests/integration`` all work, instead of only the last. The fixtures that read the options
-stay in tests/integration/conftest.py.
+Registered at the tests/ root so that every invocation (``pytest``, ``pytest tests/integration``)
+accepts them; pytest only reads ``pytest_addoption`` from the initial conftest files.
 """
 
 from __future__ import annotations

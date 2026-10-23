@@ -1,18 +1,7 @@
 """Generate the integration CI matrix from stacks.yml.
 
-Run it locally to see exactly which {stack x config x version} jobs CI would run:
-
-    pixi run -e py313 python tests/integration/generate_matrix.py
-
-The integration workflow (.github/workflows/integration.yml) calls it with --github-output to
-append the matrix to $GITHUB_OUTPUT. Only *harmonized* stacks — those whose compose.yml and own
-client config have landed — become jobs; stacks that are merely seeded in the manifest are announced and skipped
-here (rather than by a per-job step), so an unharmonized stack never turns a matrix job red.
-
-This module is also the single home of the manifest helpers (``load_manifest``, ``compose_env``):
-conftest.py and test_manifest.py import them from here. It must therefore stay import-light — the
-workflow runs it with the runner's *system* python3, so it may not import pytest. See
-docs/dev/reference/integration-stacks.md for the manifest schema.
+Preview locally with ``python tests/integration/generate_matrix.py``. Runs on the CI runner's
+system python3, so it must not import pytest.
 """
 
 from __future__ import annotations
@@ -33,7 +22,7 @@ REQUIRED_KEYS = ("id", "configs", "markers")
 
 
 def load_manifest() -> list[dict[str, Any]]:
-    """Return the list of stack entries from stacks.yml (the CI-matrix source of truth)."""
+    """Return the stack entries from stacks.yml."""
     with STACKS_FILE.open() as f:
         data = yaml.safe_load(f)
     if not isinstance(data, dict) or "stacks" not in data:
@@ -42,33 +31,24 @@ def load_manifest() -> list[dict[str, Any]]:
 
 
 def compose_env(entry: dict[str, Any]) -> str:
-    """Return the directory under stacks/ holding the stack's compose.yml: `compose:`, else its id.
-
-    `compose:` names a directory, not another stack, so stacks that share a backend (ssh-slurm and
-    local-slurm on stacks/slurm/) are peers rather than one borrowing the other's environment.
-    """
+    """Return the directory under stacks/ holding the stack's compose.yml."""
     return entry.get("compose", entry["id"])
 
 
 def is_harmonized(entry: dict[str, Any]) -> bool:
-    """Report whether the stack has landed: its compose.yml *and* its own client config.
-
-    Requiring the stack's own config/ means a stack sharing a compose environment does not become
-    a CI job just because a sibling stack landed that environment.
-    """
+    """Return whether both the stack's compose.yml and its own config/ have landed."""
     return (STACKS_DIR / compose_env(entry) / "compose.yml").is_file() and (
         STACKS_DIR / entry["id"] / "config"
     ).is_dir()
 
 
 def build_matrix(stacks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Expand manifest entries into the flat {stack x config x version} job list."""
+    """Expand manifest entries into {stack x config x version} jobs."""
     include = []
     for entry in stacks:
         stack_id = entry.get("id")
         for key in REQUIRED_KEYS:
             if key not in entry:
-                # Name the offending stack instead of dying with a bare KeyError deep in a loop.
                 raise SystemExit(
                     f"stack {stack_id or entry!r}: missing required key {key!r}"
                 )
@@ -102,15 +82,8 @@ def main() -> None:
         (harmonized if is_harmonized(entry) else seeded).append(entry)
     matrix = build_matrix(harmonized)
 
-    # Seeded-but-not-yet-harmonized stacks are not jobs. Announce them — as a CI annotation under
-    # --github-output, else on stderr so the JSON on stdout stays clean — so the manifest's intent
-    # stays visible without a skipped-job placeholder in the check UI.
     for entry in seeded:
-        note = (
-            f"stack {entry.get('id')!r} is seeded in stacks.yml but has no compose.yml"
-            " or client config yet"
-            " - skipping"
-        )
+        note = f"stack {entry.get('id')!r} has no compose.yml or config/ yet - skipping"
         if args.github_output:
             print(f"::notice::{note}")
         else:

@@ -1,24 +1,15 @@
-# THE manifest: single source of truth for the integration CI matrix.
-#
-# The field reference and the stack contract live in docs/dev/reference/integration-stacks.md —
-# this file is data, not documentation. Adding a stack, a configuration, or a supported version is
-# one entry here plus files under stacks/<id>/; no workflow edits.
-#
-# The entries below are seeded for the three in-flight stack PRs (issues #5, #12, #13); a stack
-# becomes a CI job only once its compose.yml and its own client config land ("harmonized").
+# Integration CI matrix. Schema: docs/dev/reference/integration-stacks.md
 stacks:
   - id: arc-slurm
     configs: [basic]
-    versions: [latest] # ARC 7.x leading edge; floor is 7.x
+    versions: [latest]
     markers: "remote and arc"
 
   - id: htcondor
     configs: [basic]
-    versions: [lts, latest] # HTCondor LTS anchor + leading edge
+    versions: [lts, latest]
     markers: "remote and htcondor"
 
-  # ssh-slurm and local-slurm share one Slurm cluster (stacks/slurm/compose.yml) and differ only
-  # in how interCEde reaches it: each keeps its own client config under stacks/<id>/config/.
   - id: ssh-slurm
     compose: slurm
     configs: [basic]
@@ -27,8 +18,5 @@ stacks:
   - id: local-slurm
     compose: slurm
     configs: [basic]
-    # Local transport, so exclude the SSH-transport tests. Every future local-* stack sharing a
-    # compose environment with an ssh-* one needs the same `and not ssh` guard: the `ssh` marker
-    # is otherwise byte-identical here and in ssh-slurm, so an ssh test would run in both jobs.
-    markers: "scheduler and slurm and not ssh"
+    markers: "scheduler and slurm and not ssh" # ssh tests already run in ssh-slurm
     exec_in_container: true

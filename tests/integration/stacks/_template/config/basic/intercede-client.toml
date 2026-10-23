@@ -1,20 +1,13 @@
-# Client-side half of the `basic` configuration for this stack, consumed by the test harness
-# (the `client_config` fixture in tests/integration/conftest.py).
-#
-# Backend configuration (arc.conf, condor config, slurm.conf, mounted by compose.yml) and this
-# file change together, atomically, under one configuration name. A new
-# configuration (e.g. token vs proxy auth) is a new config/<name>/ directory plus a stacks.yml
-# `configs:` entry — never a mutation of `basic`.
+# Client half of the `basic` configuration. See docs/dev/reference/integration-stacks.md
 
 [stack]
-id = "CHANGEME" # must match THIS entry's own id in stacks.yml — a stack sharing a `compose:`
-                # environment still keeps its own client config under its own id
+id = "CHANGEME" # this stack's id in stacks.yml
 
 [backend]
-kind = "CHANGEME"     # arc | htcondor-ce | htcondor | ssh | local — which client path the tests drive
-endpoint = "CHANGEME" # host:port the harness dials, e.g. "https://localhost:443/arex" or "localhost:2222"
-queue = "CHANGEME"    # target queue/partition name inside the container
+kind = "CHANGEME"     # arc | htcondor-ce | htcondor | ssh | local
+endpoint = "CHANGEME" # e.g. "https://localhost:443/arex" or "localhost:2222"
+queue = "CHANGEME"
 
 [credentials]
-type = "CHANGEME"                # token | proxy | ssh-key
-path = "credentials/CHANGEME/"   # under the stack's host-readable ./credentials bind mount
+type = "CHANGEME"              # token | proxy | ssh-key
+path = "credentials/CHANGEME/" # under the ./credentials bind mount
