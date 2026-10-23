@@ -78,3 +78,16 @@ class TestOpOutcome:
             OpOutcome[None](ok=False)
         with pytest.raises(ValidationError):
             OpOutcome[JobOutput](ok=False, reason="x", value=JobOutput())
+
+
+def test_an_input_name_is_given_once():
+    # Two sources for one file in the working directory: which one would win?
+    twice = [FileRef(name="in", source="a"), FileRef(name="in", source="b")]
+    with pytest.raises(ValidationError, match="more than once"):
+        SubmissionSpec(executable="x", inputs=twice)
+
+
+def test_secrets_that_clash_with_inputs_are_named():
+    spec = SubmissionSpec(executable="x", inputs=[FileRef(name="in", source="a")])
+    assert spec.clashes_with(CopyVars(secrets={"in": b"s", "other": b"s"})) == {"in"}
+    assert spec.clashes_with(CopyVars()) == frozenset()

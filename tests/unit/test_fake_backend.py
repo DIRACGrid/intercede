@@ -93,6 +93,9 @@ async def test_diagnostics_are_repeatable():
             outcome = (await backend.get_diagnostics([handle]))[handle]
             assert outcome.value is not None
             assert outcome.value.content == "progress"
+        named = (await backend.get_diagnostics([handle], filename="job.log"))[handle]
+        assert outcome.value.filename == "stdout"  # the default
+        assert named.value is not None and named.value.filename == "job.log"
 
 
 @pytest.mark.parametrize(

@@ -1,4 +1,4 @@
-"""Data types of the InterCEde contract (IC-ADR-001 §2)."""
+"""Data types of the InterCEde contract: what a consumer submits and what comes back."""
 
 from __future__ import annotations
 
@@ -42,14 +42,14 @@ class _Model(BaseModel):
     """Base for every contract type: immutable, and strict about unknown fields.
 
     Values arrive from configuration and from stored handles, so they are
-    validated rather than trusted (IC-ADR-001 §2).
+    validated rather than trusted.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
 def _check_in_workdir(name: str) -> str:
-    """Reject names that would leave the job's working directory (IC-ADR-001 §2, §3)."""
+    """Reject names that would leave the job's working directory."""
     path = PurePosixPath(name)
     if (
         not name
@@ -110,7 +110,7 @@ class OutputSpec(_Model):
 
 
 class CopyVars(_Model):
-    """What differs between the copies of one specification (IC-ADR-001 §2.1)."""
+    """What differs between the copies of one specification."""
 
     environment: Mapping[str, str] = {}  # identifiers; readable by the site
     # File name -> content, staged at 0600 and never put in the job description.
@@ -119,7 +119,11 @@ class CopyVars(_Model):
 
 
 class SubmissionSpec(_Model):
-    """What every copy of a submission shares."""
+    """What every copy of a submission shares.
+
+    Every input lands in the job's working directory under its ``name``, so two
+    inputs cannot share a name: the spec is refused when it is built.
+    """
 
     executable: str
     arguments: Sequence[str] = ()
@@ -131,6 +135,28 @@ class SubmissionSpec(_Model):
     stdout: WorkdirName | None = None  # the backend picks a unique name when None
     stderr: WorkdirName | None = None
     tag: str | None = None  # consumer token for correlation and debugging only
+
+    @model_validator(mode="after")
+    def _unique_input_names(self) -> Self:
+        names = [ref.name for ref in self.inputs]
+        if twice := sorted({name for name in names if names.count(name) > 1}):
+            raise ValueError(f"inputs {twice} are given more than once")
+        return self
+
+    def clashes_with(self, copy: CopyVars) -> frozenset[str]:
+        """Return the names of ``copy``'s secrets that an input of this spec also uses.
+
+        A secret and an input with the same name would be staged to the same
+        file in the working directory. A backend refuses such a copy at submit.
+
+        Args:
+            copy: The per-copy values to check against this spec.
+
+        Returns:
+            The clashing names; empty when there are none.
+
+        """
+        return frozenset(copy.secrets) & {ref.name for ref in self.inputs}
 
 
 # --------------------------------------------------------------------------
@@ -175,8 +201,9 @@ class JobHandle(_Model):
 class JobStatus(StrEnum):
     """Common job states.
 
-    Only UNKNOWN is fixed by the ADR. The other values are a proposal, aligned
-    with DIRAC's pilot states; confirm before release.
+    UNKNOWN is fixed: a job the backend no longer knows is reported as UNKNOWN,
+    never dropped. The other values are a proposal, aligned with DIRAC's pilot
+    states; confirm before release.
     """
 
     SUBMITTED = "Submitted"
@@ -218,17 +245,14 @@ class JobOutput(_Model):
 
 
 class Diagnostics(_Model):
-    """A file read from a job before it completes.
+    """A file read from a job before it completes. The fields are a proposal."""
 
-    The fields are a proposal; the ADR does not fix them.
-    """
-
-    name: str
+    filename: str  # the file that was read, e.g. "stdout" or "job.log"
     content: str
 
 
 class OpOutcome(_Model, Generic[T]):
-    """The outcome of an operation for one job (IC-ADR-001 §3).
+    """The outcome of an operation for one job.
 
     A failed outcome carries a ``reason`` and no value. A successful one carries
     a value, except for operations that return nothing (``OpOutcome[None]``);

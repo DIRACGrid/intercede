@@ -1,4 +1,4 @@
-"""Exceptions for failures of a whole operation (IC-ADR-001 §3).
+"""Exceptions for failures of a whole operation.
 
 Anything that can fail for some jobs and succeed for others is reported in the
 returned map instead, never raised.
@@ -24,7 +24,7 @@ class ConfigurationError(InterCEdeError):
 
 
 class AuthenticationError(InterCEdeError):
-    """The resource rejected the credentials (IC-ADR-003 §3)."""
+    """The resource rejected the credentials."""
 
 
 class ResourceUnavailableError(InterCEdeError):
