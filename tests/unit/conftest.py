@@ -2,7 +2,7 @@
 
 ``backend`` is parametrised over every backend the conformance suite runs
 against. Only the in-memory fake exists for now; real backends join the list
-in the integration suite (IC-ADR-002).
+in the integration suite.
 """
 
 from __future__ import annotations

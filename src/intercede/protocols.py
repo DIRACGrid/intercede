@@ -1,4 +1,4 @@
-"""The capability protocols of the InterCEde contract (IC-ADR-001 §3).
+"""The capability protocols of the InterCEde contract.
 
 A backend qualifies by having the right methods; it never inherits from these
 classes. Every protocol is runtime-checkable, so consumers can narrow on a
@@ -49,13 +49,26 @@ class Submitter(Protocol):
     ) -> Submission:
         """Submit ``spec`` once per copy.
 
-        Pass a count for identical copies, or one ``CopyVars`` per copy when each
-        copy needs its own identity or secret. ``Submission.handles[i]`` belongs
-        to copy ``i``; refused copies are reported in ``Submission.failures``.
+        Local input files are read before this returns: the backend never
+        depends on caller-owned paths afterwards.
 
-        A spec the backend cannot honour raises ``SpecificationRejectedError``
-        and submits nothing. Local input files are read before this returns:
-        the backend never depends on caller-owned paths afterwards.
+        Args:
+            spec: What every copy shares: executable, inputs, outputs, resources.
+            copies: A count for identical copies, or one ``CopyVars`` per copy
+                when each copy needs its own environment or secrets.
+
+        Returns:
+            The handles of the submitted copies and the reasons for refused
+            ones, both keyed by copy index: ``handles[i]`` belongs to copy ``i``.
+
+        Raises:
+            SpecificationRejectedError: The backend cannot honour ``spec``, or a
+                copy has a secret named like one of the spec's inputs. Nothing
+                is submitted.
+            ResourceUnavailableError: The resource could not be reached, or
+                nothing could be submitted.
+            AuthenticationError: The resource rejected the credentials.
+
         """
         ...
 
@@ -65,7 +78,20 @@ class StatusReporter(Protocol):
     """Reports the status of jobs."""
 
     async def get_status(self, handles: Sequence[JobHandle]) -> StatusMap:
-        """Return a status per handle. Jobs the backend does not know are ``UNKNOWN``, never dropped."""
+        """Return the current status of each job.
+
+        Args:
+            handles: The jobs to ask about, as returned by ``submit``.
+
+        Returns:
+            One status per handle. A job the backend does not know is
+            ``UNKNOWN``, never left out.
+
+        Raises:
+            ResourceUnavailableError: The resource could not be reached.
+            AuthenticationError: The resource rejected the credentials.
+
+        """
         ...
 
 
@@ -73,8 +99,8 @@ class StatusReporter(Protocol):
 class JobBackend(Submitter, StatusReporter, Protocol):
     """A complete backend: what the registry returns.
 
-    Backends are asynchronous context managers (IC-ADR-001 §3): construction
-    does no I/O, and closing is idempotent.
+    Backends are asynchronous context managers: construction does no I/O,
+    connections are opened on entry, and closing is idempotent.
     """
 
     async def __aenter__(self) -> Self: ...
@@ -89,6 +115,7 @@ class JobBackend(Submitter, StatusReporter, Protocol):
 
 # --------------------------------------------------------------------------
 # Optional capabilities: a backend implements only those it really has.
+# Each operation reports per job; a failure of the whole operation raises.
 # --------------------------------------------------------------------------
 
 
@@ -99,10 +126,19 @@ class OutputRetriever(Protocol):
     async def get_output(
         self, handles: Sequence[JobHandle], dest: Path
     ) -> Mapping[JobHandle, OpOutcome[JobOutput]]:
-        """Write each job's kept outputs into ``dest`` and return a manifest per job.
+        """Write each finished job's kept outputs into ``dest``.
 
-        ``dest`` belongs to the consumer: InterCEde writes into it and never
-        deletes it. Every member lands under ``dest``. Collection is repeatable.
+        Collection is repeatable until the job is purged.
+
+        Args:
+            handles: The jobs to collect.
+            dest: A directory owned by the consumer. InterCEde writes every file
+                under it and never deletes it.
+
+        Returns:
+            Per job, a manifest of the files written, or the reason the job's
+            output could not be collected (for example, it has not finished).
+
         """
         ...
 
@@ -114,7 +150,16 @@ class Killable(Protocol):
     async def kill(
         self, handles: Sequence[JobHandle]
     ) -> Mapping[JobHandle, OpOutcome[None]]:
-        """Cancel the jobs; the outcome is reported per job."""
+        """Cancel the jobs that are still active.
+
+        Args:
+            handles: The jobs to cancel.
+
+        Returns:
+            Per job, whether it was cancelled. A job that already finished is
+            left alone and reported as a success with a reason.
+
+        """
         ...
 
 
@@ -125,7 +170,16 @@ class Purgeable(Protocol):
     async def purge(
         self, handles: Sequence[JobHandle]
     ) -> Mapping[JobHandle, OpOutcome[None]]:
-        """Release outputs and remote state without collecting them."""
+        """Release the jobs' outputs and remote state without collecting them.
+
+        Args:
+            handles: The jobs to release.
+
+        Returns:
+            Per job, whether it was released. Afterwards its output can no
+            longer be collected.
+
+        """
         ...
 
 
@@ -134,7 +188,18 @@ class Diagnosable(Protocol):
     """Reads files from jobs before they complete."""
 
     async def get_diagnostics(
-        self, handles: Sequence[JobHandle], name: str | None = None
+        self, handles: Sequence[JobHandle], filename: str | None = None
     ) -> Mapping[JobHandle, OpOutcome[Diagnostics]]:
-        """Read a file from each job; repeatable and non-destructive."""
+        """Read one file from each job while it runs; repeatable and non-destructive.
+
+        Args:
+            handles: The jobs to read from.
+            filename: A file in the job's working directory, for example
+                ``"job.log"``. ``None`` reads the job's standard output.
+
+        Returns:
+            Per job, the file's name and content, or the reason it could not be
+            read.
+
+        """
         ...

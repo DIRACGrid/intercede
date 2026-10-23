@@ -83,7 +83,7 @@ class FakeBackend:
         resource_staging: bool = True,
         containers: bool = True,
     ) -> None:
-        # Construction is cheap and does no I/O (IC-ADR-001 §3).
+        # Construction is cheap and does no I/O: connecting happens on entry.
         self.resource = resource
         self.refuse_copies = set(refuse_copies)
         self.fail_jobs = set(fail_jobs)
@@ -133,6 +133,11 @@ class FakeBackend:
         self._check_usable()
         self._check_supported(spec)
         copy_vars = [CopyVars()] * copies if isinstance(copies, int) else list(copies)
+        for index, copy in enumerate(copy_vars):
+            if clashes := spec.clashes_with(copy):
+                raise SpecificationRejectedError(
+                    f"copy {index}: secrets {sorted(clashes)} are named like inputs"
+                )
 
         # File ownership: read local inputs now, so the backend never depends on
         # caller-owned paths after submit() returns.
@@ -221,7 +226,7 @@ class FakeBackend:
         return results
 
     async def get_diagnostics(
-        self, handles: Sequence[JobHandle], name: str | None = None
+        self, handles: Sequence[JobHandle], filename: str | None = None
     ) -> Mapping[JobHandle, OpOutcome[Diagnostics]]:
         self._check_usable()
         results: dict[JobHandle, OpOutcome[Diagnostics]] = {}
@@ -230,7 +235,9 @@ class FakeBackend:
             if job is None:
                 results[handle] = OpOutcome[Diagnostics](ok=False, reason=error)
             else:
-                diagnostics = Diagnostics(name=name or "stdout", content=job.stdout)
+                diagnostics = Diagnostics(
+                    filename=filename or "stdout", content=job.stdout
+                )
                 results[handle] = OpOutcome[Diagnostics](ok=True, value=diagnostics)
         return results
 
@@ -253,7 +260,7 @@ class FakeBackend:
     # -- helpers -----------------------------------------------------------
 
     def _check_supported(self, spec: SubmissionSpec) -> None:
-        # Refuse at submit what the resource cannot honour (IC-ADR-001 §2.3, §2.4).
+        # Refuse at submit what the resource cannot honour, before anything runs.
         self._check_container_support(spec)
 
         if not self.resource_staging:
@@ -366,7 +373,7 @@ class FakeBackend:
 
 
 # The type checker proves conformance: these assignments fail mypy if the fake
-# ever drifts from the contract (IC-ADR-001 §4).
+# ever drifts from the contract.
 _backend: type[JobBackend] = FakeBackend
 _output: type[OutputRetriever] = FakeBackend
 _kill: type[Killable] = FakeBackend

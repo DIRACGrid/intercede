@@ -186,7 +186,7 @@ async def test_diagnostics_read_a_running_job_by_name():
         handle = (await backend.submit(SPEC)).handles[0]
         backend.finish(handle, status=JobStatus.RUNNING, stdout="progress")
         default = (await backend.get_diagnostics([handle]))[handle]
-        named = (await backend.get_diagnostics([handle], name="job.log"))[handle]
-    assert default.value is not None and default.value.name == "stdout"
+        named = (await backend.get_diagnostics([handle], filename="job.log"))[handle]
+    assert default.value is not None and default.value.filename == "stdout"
     assert default.value.content == "progress"
-    assert named.value is not None and named.value.name == "job.log"
+    assert named.value is not None and named.value.filename == "job.log"

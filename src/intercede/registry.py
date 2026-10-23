@@ -1,4 +1,4 @@
-"""Turn a backend configuration into a backend (IC-ADR-001 §5).
+"""Turn a backend configuration into a backend.
 
 The registry is closed: the tables below list every backend, transport and
 scheduler interCEde ships, and nothing outside the library can add to them.
@@ -73,6 +73,9 @@ def backend(
             and closes it; interCEde never does. One provider is normally
             shared by every backend a task drives.
 
+    Returns:
+        The backend, not yet opened.
+
     Raises:
         ConfigurationError: The configuration is invalid, or ``credentials``
             is not a ``CredentialProvider``.
@@ -95,7 +98,10 @@ def backend(
 def available() -> dict[str, tuple[str, ...]]:
     """List what a configuration can ask for in this version, per group.
 
-    For tooling, e.g. ``{"backend": ("arc", "batch"), "transport": ("ssh",), ...}``.
+    Returns:
+        The names per group, sorted, for tooling. For example
+        ``{"backend": ("arc", "batch"), "transport": ("ssh",), ...}``.
+
     """
     public = {
         "backend": _choices(BackendConfig.model_fields["kind"].annotation),
@@ -185,7 +191,7 @@ def _load(group: str, name: str) -> Any:
 
 
 def _checked(group: str, name: str, built: Any, protocol: type) -> Any:
-    """Refuse an object that does not satisfy its protocol (IC-ADR-001 §5)."""
+    """Refuse an object that does not satisfy its protocol."""
     if not isinstance(built, protocol):
         raise RegistryError(
             f"{group} {name!r} built a {type(built).__name__}, which is not a {protocol.__name__}"
