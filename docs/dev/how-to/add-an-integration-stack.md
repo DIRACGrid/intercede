@@ -1,54 +1,42 @@
 # Add an integration stack
 
-A *stack* is a named, self-contained backend environment (one `docker compose` file plus
-versioned configuration) that the integration suite runs against. Adding one requires **no
-workflow edits** — the CI matrix is generated from the manifest.
+Words like *stack*, *compose environment* and *configuration* are explained in
+[Integration stacks](../reference/integration-stacks.md#words-used-here).
 
-Before starting, read the [stack contract](../reference/integration-stacks.md) — the rules below
-reference it.
+You do not need to change any CI workflow. CI finds the stack in `stacks.yml`.
 
 ## Steps
 
-1. **Copy the template**: `tests/integration/stacks/_template/` →
-   `tests/integration/stacks/<id>/`. Fill in `compose.yml` (real healthcheck, host-readable
-   `./credentials` bind mount) and `config/basic/` (backend config + `intercede-client.toml`,
-   which change together as one atomic configuration). Stacks that test **one backend through
-   different transports** share a neutral compose directory (e.g. `stacks/slurm/`, holding
-   `compose.yml` and the backend config) via `compose:`; each such stack ships only its own
-   `config/<name>/intercede-client.toml`, and a `local-*` stack's `markers` exclude the SSH tests
-   (`and not ssh`).
-2. **Add the image** under `tests/integration/stacks/_images/<name>/` following the
-   [image conventions](../reference/integration-images.md) (EL9, pinned Renovate-annotated
-   `ARG`s, foreground daemons, ephemeral credentials at start).
-3. **Add the manifest entry** in `tests/integration/stacks.yml` (`id`, `configs`, `markers`,
-   optionally `versions` / `compose:` / `exec_in_container`).
-4. **Verify locally**:
+1. **Copy the template.** Copy `tests/integration/stacks/_template/` to
+   `tests/integration/stacks/<id>/`. Then fill in:
+   - `compose.yml`: a real healthcheck, and the `./credentials` bind mount;
+   - `config/basic/`: the backend config files and `intercede-client.toml`.
+
+   If your stack uses a backend that another stack already starts (for example a second way to
+   connect to Slurm), do not copy `compose.yml`. Set `compose:` to the existing folder, and add
+   only `config/basic/intercede-client.toml`. See
+   [Sharing a compose environment](../reference/integration-stacks.md#sharing-a-compose-environment).
+2. **Add the image** in `tests/integration/stacks/_images/<name>/`. Follow the
+   [image rules](../reference/integration-images.md).
+3. **Add the stack to `tests/integration/stacks.yml`**: `id`, `configs`, `markers`, and if needed
+   `compose`, `versions`, `exec_in_container`.
+4. **Test it locally:**
 
    ```sh
    docker compose -f tests/integration/stacks/<id>/compose.yml up --wait
    pixi run -e py313 pytest tests/integration -m "<markers>" --stack=<id> --config=basic
-   pixi run -e py313 pytest tests/integration/test_manifest.py   # layout checks
+   pixi run -e py313 pytest tests/integration/test_manifest.py
    ```
 
-## Harmonization checklist
+## Checklist for the pull request
 
-For a stack PR (including the in-flight prototype stacks converging onto this layout):
-
-- [ ] Files under `stacks/<id>/` following `_template/` (compose.yml + `config/basic/`)
-- [ ] `docker compose … up --wait` succeeds locally; healthchecks probe real readiness
-- [ ] Daemons foregrounded (no systemd), logging to stdout/stderr; Docker (not Podman) on
-      EL9-based images
-- [ ] Dockerfile under `stacks/_images/<name>/` with pinned, `# renovate:`-annotated `ARG`s
-- [ ] Credentials generated at start, world-readable, into the host-readable `./credentials` bind
-      mount under `credentials/<id>/…` (gitignored)
-- [ ] `intercede-client.toml` filled in (own `id`, endpoint, credential type/path, queue); a
-      host-run stack publishes its port on localhost with a matching Test-CA SAN
-- [ ] `stacks.yml` entry present; `pytest tests/integration/test_manifest.py` green
-- [ ] At least one marker-selected Phase-0 smoke test ships with the stack (so its job isn't just
-      "no tests ran" — the workflow tolerates that, but a smoke test makes the job meaningful)
-- [ ] Bespoke per-PR workflow removed: the manifest-driven `integration.yml` now runs
-      automatically on any PR touching `tests/integration/**`, so the stack self-tests. It stays
-      **non-blocking** until issue #14 (GHCR image pulls + `ci.yml` invocation + required check),
-      so keep a bespoke workflow only if you need a *gating* check in the interim
-- [ ] `docker compose logs` captures the daemons' output on failure (daemons log to stdout; a
-      file-logging daemon redirects to `/dev/stdout`)
+- [ ] The stack follows the [rules for a stack](../reference/integration-stacks.md#rules-for-a-stack).
+- [ ] `docker compose ... up --wait` works on your machine.
+- [ ] The images use Docker, not Podman.
+- [ ] `intercede-client.toml` is filled in: `id`, endpoint, queue, credential type and path.
+- [ ] `pytest tests/integration/test_manifest.py` passes.
+- [ ] At least one test runs for this stack (phase 0: a test that uses the backend's own
+      command-line tools). Without one, the CI job passes but tests nothing.
+- [ ] If your pull request had its own workflow for this stack, remove it. `integration.yml` runs
+      on every pull request that changes `tests/integration/`. It does not block merging yet
+      (#14), so keep your own workflow only if you need a check that blocks merging.

@@ -1,19 +1,17 @@
 # Integration tests
 
-Backend-agnostic tests that run against real, containerised backend daemons ("stacks").
-
-Quickstart:
+Tests that run against real backends (ARC, HTCondor, Slurm) in containers. Each backend setup is
+called a *stack*.
 
 ```sh
 docker compose -f tests/integration/stacks/<id>/compose.yml up --wait
 pixi run -e py313 pytest tests/integration -m "<markers>" --stack=<id> --config=basic
 ```
 
-Documentation lives in [`docs/dev/`](../../docs/dev/index.md):
+Documentation:
 
-- How-to: [run the tests locally](../../docs/dev/how-to/run-integration-tests-locally.md) ·
-  [add a stack](../../docs/dev/how-to/add-an-integration-stack.md) (incl. the harmonization
-  checklist)
-- Reference: [layout, manifest schema, stack contract](../../docs/dev/reference/integration-stacks.md) ·
-  [image conventions](../../docs/dev/reference/integration-images.md)
-- Explanation: [why integration stacks](../../docs/dev/explanations/integration-testing.md)
+- [Run the tests locally](../../docs/dev/how-to/run-integration-tests-locally.md)
+- [Add a stack](../../docs/dev/how-to/add-an-integration-stack.md)
+- [Integration stacks: files, `stacks.yml` fields, rules](../../docs/dev/reference/integration-stacks.md)
+- [Image rules](../../docs/dev/reference/integration-images.md)
+- [Why we test against real backends](../../docs/dev/explanations/integration-testing.md)

@@ -1,11 +1,11 @@
 # Developer documentation
 
-Organised following [Diátaxis](https://diataxis.fr/), as in the other DiracX-family projects:
+The documentation is organised following [Diátaxis](https://diataxis.fr/), like the other
+DiracX projects:
 
-- [Tutorials](tutorials/index.md) — learning-oriented, step-by-step lessons
-- [How-to guides](how-to/index.md) — task-oriented recipes
-- [Reference](reference/index.md) — information-oriented technical description
-- [Explanations](explanations/index.md) — understanding-oriented discussion
+- [Tutorials](tutorials/index.md): lessons to learn step by step
+- [How-to guides](how-to/index.md): steps for one task
+- [Reference](reference/index.md): technical details
+- [Explanations](explanations/index.md): why things are done this way
 
-User-facing documentation (`docs/user/`) is deferred until the library has a public API to
-document.
+User documentation (`docs/user/`) will come once the library has a public API.

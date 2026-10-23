@@ -1,113 +1,120 @@
-# Integration stacks — layout, manifest schema, stack contract
+# Integration stacks
 
-Reference for the integration-test infrastructure.
+## Words used here
 
-## Layout
+- **Stack**: one backend that the tests run against, for example `htcondor` or `ssh-slurm`. Each
+  stack is one entry in `tests/integration/stacks.yml`.
+- **Compose environment**: the `compose.yml` file that starts the backend containers. It is
+  usually in `stacks/<id>/`. Several stacks can share one (see `compose` below).
+- **Configuration**: one way to set up the backend, for example `basic`. It is a folder
+  `config/<name>/` with the backend's config files and `intercede-client.toml`, which tells the
+  tests how to connect.
+- **CI job**: one stack, with one configuration, at one backend version.
+
+## Files
 
 ```
 tests/integration/
-├── stacks.yml                      # THE manifest: single source of truth for the CI matrix
-├── conftest.py                     # --stack/--config options, stack fixtures, capability skip
-├── generate_matrix.py              # manifest → CI matrix expansion (runnable locally)
-├── test_manifest.py                # manifest schema + layout checks (run in plain unit CI)
-├── test_*.py                       # the backend-agnostic contract suite (Phase 2)
+├── stacks.yml              # list of stacks; CI creates its jobs from this file
+├── conftest.py             # pytest fixtures: stack, stack_dir, client_config
+├── generate_matrix.py      # turns stacks.yml into the list of CI jobs
+├── test_manifest.py        # checks stacks.yml and the stack folders (no Docker needed)
 └── stacks/
-    ├── _template/                  # copy me: compose.yml + config/basic/intercede-client.toml
-    ├── _images/                    # shared Dockerfiles (see integration-images.md)
-    ├── <stack-id>/
+    ├── _template/          # copy this to start a new stack
+    ├── _images/            # Dockerfiles (see integration-images.md)
+    ├── htcondor/           # a stack with its own compose environment
     │   ├── compose.yml
-    │   └── config/
-    │       └── basic/              # backend config + intercede-client.toml, changed together
-    ├── slurm/                      # shared compose environment (`compose: slurm`)
+    │   └── config/basic/   # backend config files + intercede-client.toml
+    ├── slurm/              # a compose environment shared by two stacks
     │   ├── compose.yml
-    │   └── config/basic/           # backend config only (slurm.conf, cgroup.conf)
-    ├── ssh-slurm/config/basic/     # intercede-client.toml only: SSH transport
-    └── local-slurm/config/basic/   # intercede-client.toml only: Local transport
+    │   └── config/basic/   # backend config files only (slurm.conf, cgroup.conf)
+    ├── ssh-slurm/
+    │   └── config/basic/   # intercede-client.toml only (connects over SSH)
+    └── local-slurm/
+        └── config/basic/   # intercede-client.toml only (runs inside the container)
 ```
 
-## Manifest schema (`stacks.yml`)
+## `stacks.yml` fields
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `id` | yes | Stack name; holds the stack's client config, and its compose environment unless `compose:` is set |
-| `compose` | no | Directory under `stacks/` holding a compose environment shared by several stacks (e.g. `slurm` for `ssh-slurm` and `local-slurm`) |
-| `configs` | yes | Configuration names under `stacks/<id>/config/`; start with `[basic]` |
-| `versions` | no | Backend support-window entries to run; absent = single leading-edge pin |
-| `markers` | yes | `pytest -m` expression selecting the applicable contract-suite subset |
-| `exec_in_container` | no | Run pytest inside the backend container instead of against it (default `false`) |
+| `id` | yes | Name of the stack. Its client config is in `stacks/<id>/config/`. |
+| `compose` | no | Folder in `stacks/` with the `compose.yml` to use. Default: the `id`. |
+| `configs` | yes | Configuration names, folders in `config/`. Start with `[basic]`. |
+| `versions` | no | Backend versions to test, for example `[lts, latest]`. Default: `[latest]`. |
+| `markers` | yes | `pytest -m` expression that selects the tests for this stack. |
+| `exec_in_container` | no | `true`: run pytest inside the backend container. Default: `false`. |
 
-The CI matrix is the expansion `{stack × config × version}` produced by
-`tests/integration/generate_matrix.py`; each matrix entry becomes its own CI job. Only
-*harmonized* stacks — those with a `stacks/<compose>/compose.yml` and their own
-`stacks/<id>/config/` — become jobs; a
-seeded-only entry is announced with a `::notice` by `generate_matrix.py` and skipped.
+## When a stack gets CI jobs
 
-**Shared compose environments.** `compose:` names a directory, not another stack, so stacks that
-test one backend through different transports are peers: `ssh-slurm` and `local-slurm` both start
-`stacks/slurm/compose.yml`, which owns the backend config. The *client configuration* is always
-resolved from the entry's **own** id: each ships its own `stacks/<id>/config/basic/
-intercede-client.toml` (a different `kind`/endpoint — SSH vs Local transport), and `local-slurm`'s
-`markers` exclude the SSH-transport tests (`scheduler and slurm and not ssh` — the pattern every
-future `local-*` stack needs so an `ssh`-marked test does not run in both the ssh and local jobs).
+A stack can be listed in `stacks.yml` before its files exist, for example while the pull request
+that adds it is still open. `generate_matrix.py` creates CI jobs for a stack only when both of
+these exist:
 
-**`exec_in_container: true` runs pytest inside the batch container** (Local transport, no port 22).
-The image must ship the suite + pytest — mounted or baked in (open TODO #13/#14) — and an
-unprivileged test user, since HTCondor and Slurm refuse to run jobs as root; the workflow (and the
-local `compose exec` recipe) pin that user with compose `user:` / `exec --user`.
+- `stacks/<compose>/compose.yml`
+- `stacks/<id>/config/`
 
-## The stack contract
+Otherwise it prints a notice and skips the stack.
 
-A stack that lands in `stacks/<id>/` commits to all of the following (enforced partly by
-`test_manifest.py`, partly by review):
+## Sharing a compose environment
 
-1. **One `compose.yml`, runnable locally.** CI does nothing a developer cannot do on a laptop
-   (see [the how-to](../how-to/run-integration-tests-locally.md)).
-2. **Healthchecks on every service.** `up --wait` gates on them; hand-rolled sleep-and-retry
-   loops are not accepted.
-3. **Foreground daemons, never systemd.** A plain entrypoint or minimal supervisor — privileged
-   systemd containers are fragile on GitHub runners and hide daemon logs from `docker logs`. Daemons
-   **log to stdout/stderr** so `docker compose logs` is the whole failure story; a file-logging
-   daemon redirects its log to `/dev/stdout` rather than expecting a bespoke log-directory upload
-   (the CI failure artifact is compose logs only).
-4. **Images from `stacks/_images/`,** EL9 base, pinned Renovate-annotated `ARG`s (see
-   [image conventions](integration-images.md)).
-5. **Ephemeral credentials, minted at container start** into the shared, host-readable
-   `./credentials` bind mount (gitignored) — never committed, and never a Docker *named* volume
-   (host pytest cannot read a root-owned named volume for `exec_in_container: false` stacks). The
-   layout `credentials/<id>/…` is the interface between stack and harness. Mint
-   throwaway Test-CA material world-readable; the harness copies anything needing private modes
-   (0400/0600) into a private dir itself.
-6. **Configurations are atomic directories.** `config/<name>/` holds the backend config *and*
-   `intercede-client.toml` together; a new auth/filesystem/queue variant is a new directory plus
-   a `configs:` entry in `stacks.yml`, never a mutation of `basic`.
-7. **One `stacks.yml` entry.** That is how CI finds the stack — adding a stack requires no
-   workflow edits.
-8. **Host reachability + TLS naming** (host-run stacks). A stack the harness drives from the host
-   (`exec_in_container: false`) publishes its backend port on localhost (compose `ports:`) and
-   records the same `host:port` in `intercede-client.toml`. A TLS backend's Test-CA host
-   certificate must carry a SAN for the name the client actually dials — mint it for both the
-   compose hostname and `localhost`. ARC on EL9 also needs the system crypto-policy set to `LEGACY`
-   for the proxy chain to validate.
+`ssh-slurm` and `local-slurm` test the same Slurm cluster. The only difference is how interCEde
+connects to it. Both set `compose: slurm`, so both start `stacks/slurm/compose.yml`. Each stack has
+its own `intercede-client.toml`.
 
-## Test harness
+`local-slurm` uses the markers `scheduler and slurm and not ssh`. Without `and not ssh`, the SSH
+tests would run in both jobs. Add the same `and not ssh` to every new `local-*` stack.
 
-Options and fixtures provided by `tests/integration/conftest.py`:
+## `exec_in_container: true`
 
-| Name | Kind | Meaning |
+pytest runs inside the backend container, and interCEde talks to the scheduler directly, without
+SSH. For this to work (still to do, see #13 and #14):
+
+- the image must contain pytest and the tests;
+- pytest must run as a normal user, not root, because HTCondor and Slurm refuse to run jobs as
+  root.
+
+## Rules for a stack
+
+Review checks these rules. `test_manifest.py` checks the file layout.
+
+1. **It runs locally.** One `docker compose up --wait` starts it on a laptop, exactly as in CI.
+2. **Every service has a healthcheck.** `up --wait` waits for the healthchecks. Do not use
+   `sleep` and retry loops.
+3. **No systemd.** Start daemons with a simple entrypoint script, in the foreground. systemd
+   containers break easily on GitHub runners.
+4. **Logs go to stdout/stderr.** On failure, CI saves only `docker compose logs`. If a daemon can
+   only write to a file, use `/dev/stdout` as that file.
+5. **Images come from `stacks/_images/`.** See [image rules](integration-images.md).
+6. **Credentials are created when the container starts.** Never commit them. Write them, readable
+   by everyone, to the `./credentials` bind mount, in `credentials/<id>/`. Do not use a Docker
+   named volume: it belongs to root, so pytest on the host cannot read it. These are throwaway test
+   credentials. The tests copy any file that needs strict permissions (0400/0600) to a private
+   folder.
+7. **A new configuration is a new folder.** Backend config and `intercede-client.toml` change
+   together, in `config/<name>/`. To test something else (another auth method, queue, ...), add
+   a new folder and a new name in `configs`. Do not change `basic`.
+8. **The stack is listed in `stacks.yml`.** CI needs nothing else. You do not change the
+   workflow.
+9. **The host can reach it** (only when `exec_in_container` is `false`). Publish the backend port
+   on `localhost` (compose `ports:`) and put the same `host:port` in `intercede-client.toml`. A
+   TLS certificate must be valid for the name the client uses: create it for both the compose
+   hostname and `localhost`. ARC on EL9 also needs the crypto policy set to `LEGACY`.
+
+## pytest options and fixtures
+
+Defined in `tests/conftest.py` (options) and `tests/integration/conftest.py` (fixtures):
+
+| Name | Type | Meaning |
 | --- | --- | --- |
-| `--stack` | option | Stack id from `stacks.yml`; stack-bound tests self-skip when absent (registered in `tests/conftest.py`, so every `pytest` invocation form accepts it) |
-| `--config` | option | Configuration name (default `basic`) |
-| `stack` | fixture | The selected manifest entry |
-| `stack_dir` | fixture | Directory with the stack's `compose.yml` (`stacks/<compose>/` when set) |
-| `client_config` | fixture | Parsed `intercede-client.toml`, resolved under the entry's *own* id (never `compose:`) |
+| `--stack` | option | Stack `id` to test. Without it, tests that need a stack are skipped. |
+| `--config` | option | Configuration name. Default: `basic`. |
+| `stack` | fixture | The stack's entry from `stacks.yml`. |
+| `stack_dir` | fixture | Folder with the stack's `compose.yml`. |
+| `client_config` | fixture | The stack's `intercede-client.toml`, already parsed. |
 
-Markers, registered in `pyproject.toml`: `remote`, `scheduler`, `arc`, `htcondor`, `slurm`,
-`ssh`, `destructive_fetch`. Each stack's `markers:` expression selects its subset. The
-capability-narrowing skip helper (`isinstance` against a `runtime_checkable` protocol) lands with
-the Phase-2 contract suite that calls it, alongside the interCEde protocols — it is intentionally
-not part of this scaffold, whose signature would otherwise be guessed ahead of its callers.
+If `intercede-client.toml` is missing, the test fails in CI (when `$CI` is set) and is skipped
+locally. In CI, a job where every test is skipped would look green but test nothing.
 
-A *selected* stack whose `intercede-client.toml` is missing **fails** under CI (`$CI` set) rather
-than skipping: an all-skipped run would report a green integration cell that verified nothing.
-Locally the same case skips, which stays convenient while a stack is being
-brought up.
+Markers, defined in `pyproject.toml`: `remote`, `scheduler`, `arc`, `htcondor`, `slurm`, `ssh`,
+`destructive_fetch`.

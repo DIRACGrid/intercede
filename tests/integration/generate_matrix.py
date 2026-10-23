@@ -35,7 +35,7 @@ def compose_env(entry: dict[str, Any]) -> str:
     return entry.get("compose", entry["id"])
 
 
-def is_harmonized(entry: dict[str, Any]) -> bool:
+def is_ready(entry: dict[str, Any]) -> bool:
     """Return whether both the stack's compose.yml and its own config/ have landed."""
     return (STACKS_DIR / compose_env(entry) / "compose.yml").is_file() and (
         STACKS_DIR / entry["id"] / "config"
@@ -76,13 +76,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    harmonized: list[dict[str, Any]] = []
-    seeded: list[dict[str, Any]] = []
+    ready: list[dict[str, Any]] = []
+    not_ready: list[dict[str, Any]] = []
     for entry in load_manifest():
-        (harmonized if is_harmonized(entry) else seeded).append(entry)
-    matrix = build_matrix(harmonized)
+        (ready if is_ready(entry) else not_ready).append(entry)
+    matrix = build_matrix(ready)
 
-    for entry in seeded:
+    for entry in not_ready:
         note = f"stack {entry.get('id')!r} has no compose.yml or config/ yet - skipping"
         if args.github_output:
             print(f"::notice::{note}")

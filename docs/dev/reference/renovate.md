@@ -9,8 +9,8 @@ The configuration is defined in [`renovate.json`](../../../renovate.json).
 2. **Testing dependencies** — Pytest and related testing tools
 3. **Build dependencies** — Hatchling and build tools
 4. **GitHub Actions** — GitHub Actions workflow dependencies
-5. **Integration-stack backends** — ARC, HTCondor(-CE), and Slurm daemon versions, grouped per
-   backend so a red bump PR names its culprit (see below)
+5. **Integration-stack backends** — ARC, HTCondor(-CE) and Slurm versions, one group per
+   backend, so a failing update shows which backend caused it (see below)
 
 ## Update strategy
 
@@ -20,35 +20,32 @@ The configuration is defined in [`renovate.json`](../../../renovate.json).
 - **Grouping**: related dependencies are grouped together
 - **Major versions**: handled separately for better control
 - **Automerge**: disabled (requires manual review)
-- **Security**: vulnerability alerts are enabled; security updates are labeled and prioritized
+- **Security**: vulnerability alerts are enabled; security updates are labeled and pri## Integration stack backends
 
-## Integration stack backends
+The integration stacks pin the version of each backend they test. Renovate opens a pull request
+when a new version is released. If the tests fail, we know the new version is the cause.
 
-The integration stacks pin the backend daemon versions they test against, and Renovate tracks those
-pins so a new upstream release arrives as a reviewable red-or-green PR rather than tribal knowledge.
-Three managers are enabled for this:
+Renovate finds the versions in three places:
 
-- **`docker-compose`** — upstream image tags referenced directly in a stack's `compose.yml`
-  (e.g. `htcondor/mini:<tag>`).
-- **`dockerfile`** — base images in `tests/integration/stacks/_images/*/Dockerfile`.
-- **`custom.regex`** — pinned RPM/package versions carried as `# renovate:`-annotated `ARG`s in
-  those Dockerfiles. The annotation itself declares the datasource, depName and (optionally)
-  versioning:
+- **`docker-compose`**: image tags in a stack's `compose.yml` (for example `htcondor/mini:<tag>`).
+- **`dockerfile`**: base images in `tests/integration/stacks/_images/*/Dockerfile`.
+- **`custom.regex`**: package versions in those Dockerfiles, written as an `ARG` with a
+  `# renovate:` comment. The comment tells Renovate where to look for new versions:
 
   ```dockerfile
   # renovate: datasource=repology depName=fedora_epel_9/nordugrid-arc
   ARG ARC_VERSION=7.1.1
   ```
 
-**Adding a stack needs no `renovate.json` edit.** A stack author writes the annotated `ARG`; the
-manager and per-backend grouping already configured here pick it up. Bumps are grouped per backend
-(`arc`, `htcondor`, `slurm`) and never mixed.
+**A new stack needs no change to `renovate.json`.** Write the `ARG` with its comment and Renovate
+finds it. Updates are grouped per backend (`arc`, `htcondor`, `slurm`), never mixed.
 
-**Version windows are half-automatic.** Renovate tracks the *leading-edge* `ARG` normally.
-The *older anchor* versions (e.g. an HTCondor LTS line) are human-managed: pin them and add a
-`packageRule` with `allowedVersions`/`matchCurrentVersion` (or `enabled: false`) — landed alongside
-the stack that introduces the anchor — so Renovate offers only in-major patch bumps and never
-silently moves the support window.
+**Only the newest version is updated automatically.** Older versions that we still support (for
+example an HTCondor LTS version in `versions: [lts, latest]`) are updated by hand. When you add
+such a version, also add a `packageRule` (`allowedVersions` or `matchCurrentVersion`, or
+`enabled: false`) so that Renovate proposes only patch updates for it.
+
+ window.
 
 ## How it works
 

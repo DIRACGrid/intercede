@@ -1,11 +1,11 @@
-# Integration images — Dockerfile conventions
+# Integration images
 
-Dockerfiles under `tests/integration/stacks/_images/` are shared across stacks (`arc/`, `slurm/`,
-`htcondor-ce/`, …) and follow these conventions:
+Dockerfiles for the stacks are in `tests/integration/stacks/_images/<name>/`, for example
+`arc/`, `slurm/` or `htcondor-ce/`. They follow these rules.
 
-1. **EL9 base** (`almalinux:9`), pinned by tag; backend daemons installed from **pinned RPMs**.
-2. **Every version is a Renovate-annotated `ARG`** so upstream releases arrive as red-or-green
-   Renovate PRs:
+1. **EL9 base.** Use `almalinux:9` and install the backend from pinned RPM versions.
+2. **Each version is an `ARG` with a `# renovate:` comment.** Renovate reads the comment and
+   opens a pull request when a new version is released:
 
    ```dockerfile
    FROM almalinux:9
@@ -18,31 +18,23 @@ Dockerfiles under `tests/integration/stacks/_images/` are shared across stacks (
        && dnf clean all
    ```
 
-   The `dockerfile` + `custom.regex` managers that read these annotations are already enabled in
-   [`renovate.json`](../../../renovate.json) (per-backend grouping and the leading-edge/anchor
-   convention are documented in [the Renovate reference](renovate.md)) — **adding a stack needs no
-   `renovate.json` edit**, only the annotated `ARG`. The annotation carries its own `datasource`,
-   so the exact datasource for the NorduGrid/EL9 repos (still open) is chosen when
-   the ARC Dockerfile lands, without touching the manager config.
-3. **Foreground entrypoint** — daemons run under a plain entrypoint script or minimal supervisor,
-   never systemd, and **log to stdout/stderr** so `docker compose logs` captures everything (a
-   file-logging daemon redirects its log to `/dev/stdout`). The CI failure artifact is compose
-   logs only; there is no mounted log-dir upload.
-4. **Ephemeral credentials at start**: the entrypoint mints whatever the stack needs (ARC:
-   `arcctl test-ca` CA + host cert + client credential; HTCondor(-CE): IDTOKENS) and writes
-   client-side material world-readable into the host-readable `./credentials` bind mount
-   (`credentials/<id>/…`). A TLS host certificate carries a SAN for the name the
-   client dials (the compose hostname *and* `localhost` for host-run stacks); ARC on EL9 needs the
-   crypto-policy set to `LEGACY` for the proxy chain.
-5. **Version windows**: where a backend declares an anchor + leading edge, the
-   image accepts the version as `ARG`/build-arg so the same Dockerfile serves every entry of the
-   `versions:` axis; only the leading-edge `ARG` default is Renovate-tracked.
-6. **Roles and intra-stack secrets** (multi-service stacks). A CE + LRMS or a Slurm
-   controller + worker is one parameterized image, not several: a `case "$ROLE"` entrypoint
-   selects the daemon per service rather than duplicating Dockerfiles. Secrets shared *between*
-   services (a munge key, an internal CA) obey the same rule as client credentials — minted at
-   container start into a stack-internal volume, **never baked into the image** (a GHCR-published
-   image with a baked munge key is a leaked credential).
+   You do not need to change `renovate.json` for a new image. The comment gives Renovate
+   everything it needs. See [Renovate](renovate.md).
+3. **No systemd, logs to stdout/stderr.** See rules 3 and 4 in
+   [Rules for a stack](integration-stacks.md#rules-for-a-stack).
+4. **Credentials are created when the container starts**, by the entrypoint. For example ARC
+   creates a test CA, a host certificate and a client certificate with `arcctl test-ca`, and
+   HTCondor creates IDTOKENS. See rules 6 and 9 in
+   [Rules for a stack](integration-stacks.md#rules-for-a-stack).
+5. **The version is a build argument**, so one Dockerfile can build every version listed in
+   `versions`. Renovate updates only the default value of the `ARG`.
+6. **One image per backend, even with several services.** For example a Slurm controller and a
+   Slurm worker use the same image. The entrypoint chooses the daemon from a `ROLE` variable
+   (`case "$ROLE"`).
+7. **Secrets shared between services are created at start too.** For example the Slurm munge key
+   or an internal CA. Write them to a volume inside the stack. Never put them in the image: the
+   images will be published, so a secret in an image is public.
 
-Images are built and pushed to `ghcr.io/diracgrid/intercede-testenv/<name>:<version>` by the
-`build-images` workflow; until that lands, stacks may `build:` locally from these directories.
+Later, CI will build the images and publish them as
+`ghcr.io/diracgrid/intercede-testenv/<name>:<version>` (#14). Until then, stacks build them
+locally with `build:`.

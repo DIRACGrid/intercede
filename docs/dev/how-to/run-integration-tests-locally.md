@@ -1,54 +1,50 @@
 # Run the integration tests locally
 
-Everything CI does is reproducible on a laptop: CI does nothing a developer cannot do locally.
+CI runs the same commands as below, so you can reproduce any CI job on your machine.
 
-## Run one stack
+## Run the tests for one stack
 
-1. Start the stack; healthchecks gate readiness, so when `up --wait` returns the backend is
-   usable:
+1. Start the stack. The command returns when all healthchecks pass, so the backend is ready:
 
    ```sh
-   docker compose -f tests/integration/stacks/<id>/compose.yml up --wait
+   docker compose -f tests/integration/stacks/<compose>/compose.yml up --wait
    ```
 
-2. Run the applicable test subset — the stack's `markers:` expression is in
-   `tests/integration/stacks.yml`:
+   `<compose>` is the stack's `compose` value in `tests/integration/stacks.yml`, or its `id` if it
+   has none.
+
+2. Run the tests. Copy `<markers>` from the stack's entry in `stacks.yml`:
 
    ```sh
    pixi run -e py313 pytest tests/integration -m "<markers>" --stack=<id> --config=basic
    ```
 
-For `local-*` stacks (`exec_in_container: true`) the tests run *inside* the batch container
-instead:
+For stacks with `exec_in_container: true` (the `local-*` stacks), run the tests inside the
+container instead:
 
 ```sh
 docker compose -f tests/integration/stacks/<compose>/compose.yml exec --user <test-user> backend \
   pytest tests/integration -m "<markers>" --stack=<id> --config=basic
 ```
 
-Two conditions this recipe depends on (both open TODOs, #13/#14): the image must ship the suite
-and pytest (mounted or baked in), and it must run as an **unprivileged** user — HTCondor and Slurm
-refuse to run jobs as root, hence `--user <test-user>` (or a compose `user:`). Note `--stack`
-names the stack, not the compose directory (e.g. `local-slurm`, not `slurm`), so its own
-`intercede-client.toml` is used.
+This does not work yet (#13, #14): the image must first contain pytest and the tests, and have a
+normal (not root) user. `--stack` is the stack `id` (for example `local-slurm`), not the compose
+folder (`slurm`).
 
-Stacks double as development environments: leave the stack up and point your client config at
-`localhost` to develop against a real backend.
+You can also leave a stack running and use it to develop against a real backend: point your client
+config at `localhost`.
 
-## Preview the CI matrix
-
-The CI matrix is generated from `stacks.yml` by a plain script — run it locally to see exactly
-which `{stack × config × version}` jobs CI would create:
+## See which CI jobs will run
 
 ```sh
 pixi run -e py313 python tests/integration/generate_matrix.py
 ```
 
-(The workflow calls the same script with `--github-output`.)
+This prints the jobs that CI will create from `stacks.yml`.
 
-## Manifest-only checks (no Docker needed)
+## Check `stacks.yml` and the stack folders
 
-The manifest schema and stack-layout checks run as ordinary unit tests:
+No Docker needed:
 
 ```sh
 pixi run -e py313 pytest tests/integration/test_manifest.py
