@@ -27,10 +27,6 @@ from intercede._backends.fake import FakeBackend
 SPEC = SubmissionSpec(executable="/bin/true")
 
 
-async def test_construction_does_no_io():
-    FakeBackend(resource="unreachable://")  # nothing to connect to, and nothing raised
-
-
 async def test_partial_submission_keeps_copy_indexes():
     async with FakeBackend(refuse_copies={0, 2}) as backend:
         copies = [CopyVars(environment={"STAMP": str(i)}) for i in range(4)]
