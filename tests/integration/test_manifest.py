@@ -13,7 +13,7 @@ from typing import Any
 from tests.integration.generate_matrix import (
     STACKS_DIR,
     build_matrix,
-    compose_stack,
+    compose_env,
     load_manifest,
 )
 
@@ -34,46 +34,52 @@ def test_stack_ids_are_unique():
     assert len(ids) == len(set(ids)), f"duplicate stack ids in stacks.yml: {ids}"
 
 
-def test_stack_aliases_resolve():
-    ids = {entry["id"] for entry in load_manifest()}
+def test_compose_names_a_stacks_directory():
+    """`compose:` is a plain directory name under stacks/, not a path or a reserved _ directory."""
     for entry in load_manifest():
-        alias = entry.get("stack")
-        if alias is not None:
-            assert alias in ids, (
-                f"stack {entry['id']}: alias {alias!r} is not a known stack id"
+        compose = entry.get("compose")
+        if compose is not None:
+            assert (
+                isinstance(compose, str)
+                and compose
+                and "/" not in compose
+                and not compose.startswith((".", "_"))
+            ), (
+                f"stack {entry['id']}: `compose: {compose!r}` must be a directory name under stacks/"
             )
 
 
 def test_matrix_expansion():
-    """generate_matrix expands the versions axis and resolves stack aliases."""
+    """generate_matrix expands the versions axis and resolves `compose:` directories."""
     by_stack: dict[str, list[dict[str, Any]]] = {}
     for job in build_matrix(load_manifest()):
         by_stack.setdefault(job["stack"], []).append(job)
         assert {
             "stack",
-            "compose_stack",
+            "compose_env",
             "config",
             "version",
             "markers",
             "exec_in_container",
         } <= set(job)
     assert {job["version"] for job in by_stack["htcondor"]} == {"lts", "latest"}
-    assert all(job["compose_stack"] == "ssh-slurm" for job in by_stack["local-slurm"])
+    for stack_id in ("ssh-slurm", "local-slurm"):
+        assert all(job["compose_env"] == "slurm" for job in by_stack[stack_id])
 
 
 def test_harmonized_stacks_follow_the_layout():
     """A stack whose directory has landed must follow the stack contract.
 
-    ``compose.yml`` lives with the *compose* stack (the ``stack:`` alias target when set); the
-    client config lives with the entry's *own* id, so an aliased entry (``local-slurm``) still ships
-    its own ``intercede-client.toml`` even though it borrows another stack's compose environment.
+    ``compose.yml`` lives in the compose environment (``stacks/<compose>/`` when ``compose:`` is
+    set); the client config lives under the entry's *own* id, so ``ssh-slurm`` and ``local-slurm``
+    each ship their own ``intercede-client.toml`` next to the shared ``stacks/slurm/``.
     The contract is documented in docs/dev/reference/integration-stacks.md.
     """
     for entry in load_manifest():
         own_dir = STACKS_DIR / entry["id"]
         if not own_dir.is_dir():
             continue  # seeded in the manifest, not harmonized yet — files land with the stack PR
-        compose_dir = STACKS_DIR / compose_stack(entry)
+        compose_dir = STACKS_DIR / compose_env(entry)
         assert (compose_dir / "compose.yml").is_file(), (
             f"{compose_dir} is missing compose.yml"
         )

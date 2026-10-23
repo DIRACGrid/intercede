@@ -22,14 +22,15 @@ For `local-*` stacks (`exec_in_container: true`) the tests run *inside* the batc
 instead:
 
 ```sh
-docker compose -f tests/integration/stacks/<compose-stack>/compose.yml exec --user <test-user> backend \
+docker compose -f tests/integration/stacks/<compose>/compose.yml exec --user <test-user> backend \
   pytest tests/integration -m "<markers>" --stack=<id> --config=basic
 ```
 
 Two conditions this recipe depends on (both open TODOs, #13/#14): the image must ship the suite
 and pytest (mounted or baked in), and it must run as an **unprivileged** user — HTCondor and Slurm
 refuse to run jobs as root, hence `--user <test-user>` (or a compose `user:`). Note `--stack`
-still names the aliased entry (e.g. `local-slurm`) so its own `intercede-client.toml` is used.
+names the stack, not the compose directory (e.g. `local-slurm`, not `slurm`), so its own
+`intercede-client.toml` is used.
 
 Stacks double as development environments: leave the stack up and point your client config at
 `localhost` to develop against a real backend.

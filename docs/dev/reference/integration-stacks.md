@@ -14,18 +14,23 @@ tests/integration/
 └── stacks/
     ├── _template/                  # copy me: compose.yml + config/basic/intercede-client.toml
     ├── _images/                    # shared Dockerfiles (see integration-images.md)
-    └── <stack-id>/
-        ├── compose.yml
-        └── config/
-            └── basic/              # backend config + intercede-client.toml, changed together
+    ├── <stack-id>/
+    │   ├── compose.yml
+    │   └── config/
+    │       └── basic/              # backend config + intercede-client.toml, changed together
+    ├── slurm/                      # shared compose environment (`compose: slurm`)
+    │   ├── compose.yml
+    │   └── config/basic/           # backend config only (slurm.conf, cgroup.conf)
+    ├── ssh-slurm/config/basic/     # intercede-client.toml only: SSH transport
+    └── local-slurm/config/basic/   # intercede-client.toml only: Local transport
 ```
 
 ## Manifest schema (`stacks.yml`)
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `id` | yes | Stack name; also the directory under `stacks/` unless `stack:` is set |
-| `stack` | no | Alias: reuse another stack's compose environment (e.g. `local-slurm` → `ssh-slurm`) |
+| `id` | yes | Stack name; holds the stack's client config, and its compose environment unless `compose:` is set |
+| `compose` | no | Directory under `stacks/` holding a compose environment shared by several stacks (e.g. `slurm` for `ssh-slurm` and `local-slurm`) |
 | `configs` | yes | Configuration names under `stacks/<id>/config/`; start with `[basic]` |
 | `versions` | no | Backend support-window entries to run; absent = single leading-edge pin |
 | `markers` | yes | `pytest -m` expression selecting the applicable contract-suite subset |
@@ -33,15 +38,17 @@ tests/integration/
 
 The CI matrix is the expansion `{stack × config × version}` produced by
 `tests/integration/generate_matrix.py`; each matrix entry becomes its own CI job. Only
-*harmonized* stacks — those with a `stacks/<compose_stack>/compose.yml` — become jobs; a
+*harmonized* stacks — those with a `stacks/<compose>/compose.yml` and their own
+`stacks/<id>/config/` — become jobs; a
 seeded-only entry is announced with a `::notice` by `generate_matrix.py` and skipped.
 
-**Aliases resolve two ways.** `stack:` reuses another stack's *compose environment* (so
-`local-slurm` starts `ssh-slurm`'s containers), but the *client configuration* is always resolved
-from the entry's **own** id: `local-slurm` ships its own `stacks/local-slurm/config/basic/
-intercede-client.toml` (a different `kind`/endpoint — Local vs SSH transport) and its `markers`
-exclude the borrowed transport's tests (`scheduler and slurm and not ssh` — the pattern every
-future `local-*` alias needs so an `ssh`-marked test does not run in both the ssh and local jobs).
+**Shared compose environments.** `compose:` names a directory, not another stack, so stacks that
+test one backend through different transports are peers: `ssh-slurm` and `local-slurm` both start
+`stacks/slurm/compose.yml`, which owns the backend config. The *client configuration* is always
+resolved from the entry's **own** id: each ships its own `stacks/<id>/config/basic/
+intercede-client.toml` (a different `kind`/endpoint — SSH vs Local transport), and `local-slurm`'s
+`markers` exclude the SSH-transport tests (`scheduler and slurm and not ssh` — the pattern every
+future `local-*` stack needs so an `ssh`-marked test does not run in both the ssh and local jobs).
 
 **`exec_in_container: true` runs pytest inside the batch container** (Local transport, no port 22).
 The image must ship the suite + pytest — mounted or baked in (open TODO #13/#14) — and an
@@ -91,8 +98,8 @@ Options and fixtures provided by `tests/integration/conftest.py`:
 | `--stack` | option | Stack id from `stacks.yml`; stack-bound tests self-skip when absent (registered in `tests/conftest.py`, so every `pytest` invocation form accepts it) |
 | `--config` | option | Configuration name (default `basic`) |
 | `stack` | fixture | The selected manifest entry |
-| `stack_dir` | fixture | Directory with the stack's `compose.yml` (follows the `stack:` alias) |
-| `client_config` | fixture | Parsed `intercede-client.toml`, resolved under the entry's *own* id (not the alias) |
+| `stack_dir` | fixture | Directory with the stack's `compose.yml` (`stacks/<compose>/` when set) |
+| `client_config` | fixture | Parsed `intercede-client.toml`, resolved under the entry's *own* id (never `compose:`) |
 
 Markers, registered in `pyproject.toml`: `remote`, `scheduler`, `arc`, `htcondor`, `slurm`,
 `ssh`, `destructive_fetch`. Each stack's `markers:` expression selects its subset. The

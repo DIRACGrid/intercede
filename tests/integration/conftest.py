@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from tests.integration.generate_matrix import STACKS_DIR, compose_stack, load_manifest
+from tests.integration.generate_matrix import STACKS_DIR, compose_env, load_manifest
 
 
 @pytest.fixture(scope="session")
@@ -42,8 +42,8 @@ def stack(request: pytest.FixtureRequest) -> dict[str, Any]:
 
 @pytest.fixture(scope="session")
 def stack_dir(stack: dict[str, Any]) -> Path:
-    """Directory holding the stack's compose.yml, following the `stack:` alias if set."""
-    return STACKS_DIR / compose_stack(stack)
+    """Directory holding the stack's compose.yml: stacks/<compose>/ if set, else stacks/<id>/."""
+    return STACKS_DIR / compose_env(stack)
 
 
 @pytest.fixture(scope="session")
@@ -52,9 +52,10 @@ def client_config(
 ) -> dict[str, Any]:
     """Load intercede-client.toml for --stack/--config: endpoint, credential type, queue names.
 
-    The client config is resolved from the entry's *own* id, never the ``stack:`` alias: an aliased
-    entry (e.g. ``local-slurm`` reusing ``ssh-slurm``'s compose) drives the shared backend over a
-    different transport/endpoint and so keeps its own client half. Backend config and client config
+    The client config is resolved from the entry's *own* id, never its ``compose:`` directory:
+    stacks sharing a compose environment (``ssh-slurm`` and ``local-slurm`` on ``stacks/slurm/``)
+    drive the shared backend over different transports/endpoints and so each keep their own client
+    half. Backend config and client config
     change together under one configuration name; this fixture is the client half.
     """
     config_name = request.config.getoption("--config")

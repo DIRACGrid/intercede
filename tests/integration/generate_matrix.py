@@ -5,11 +5,11 @@ Run it locally to see exactly which {stack x config x version} jobs CI would run
     pixi run -e py313 python tests/integration/generate_matrix.py
 
 The integration workflow (.github/workflows/integration.yml) calls it with --github-output to
-append the matrix to $GITHUB_OUTPUT. Only *harmonized* stacks — those whose stacks/<id>/compose.yml
-has landed — become jobs; stacks that are merely seeded in the manifest are announced and skipped
+append the matrix to $GITHUB_OUTPUT. Only *harmonized* stacks — those whose compose.yml and own
+client config have landed — become jobs; stacks that are merely seeded in the manifest are announced and skipped
 here (rather than by a per-job step), so an unharmonized stack never turns a matrix job red.
 
-This module is also the single home of the manifest helpers (``load_manifest``, ``compose_stack``):
+This module is also the single home of the manifest helpers (``load_manifest``, ``compose_env``):
 conftest.py and test_manifest.py import them from here. It must therefore stay import-light — the
 workflow runs it with the runner's *system* python3, so it may not import pytest. See
 docs/dev/reference/integration-stacks.md for the manifest schema.
@@ -41,14 +41,24 @@ def load_manifest() -> list[dict[str, Any]]:
     return data["stacks"]
 
 
-def compose_stack(entry: dict[str, Any]) -> str:
-    """Return the compose environment a stack runs in: its own id, or the `stack:` alias."""
-    return entry.get("stack", entry["id"])
+def compose_env(entry: dict[str, Any]) -> str:
+    """Return the directory under stacks/ holding the stack's compose.yml: `compose:`, else its id.
+
+    `compose:` names a directory, not another stack, so stacks that share a backend (ssh-slurm and
+    local-slurm on stacks/slurm/) are peers rather than one borrowing the other's environment.
+    """
+    return entry.get("compose", entry["id"])
 
 
 def is_harmonized(entry: dict[str, Any]) -> bool:
-    """Report whether the stack's compose.yml has landed (vs. merely seeded in the manifest)."""
-    return (STACKS_DIR / compose_stack(entry) / "compose.yml").is_file()
+    """Report whether the stack has landed: its compose.yml *and* its own client config.
+
+    Requiring the stack's own config/ means a stack sharing a compose environment does not become
+    a CI job just because a sibling stack landed that environment.
+    """
+    return (STACKS_DIR / compose_env(entry) / "compose.yml").is_file() and (
+        STACKS_DIR / entry["id"] / "config"
+    ).is_dir()
 
 
 def build_matrix(stacks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -67,7 +77,7 @@ def build_matrix(stacks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 include.append(
                     {
                         "stack": stack_id,
-                        "compose_stack": compose_stack(entry),
+                        "compose_env": compose_env(entry),
                         "config": config,
                         "version": version,
                         "markers": entry["markers"],
@@ -97,7 +107,8 @@ def main() -> None:
     # stays visible without a skipped-job placeholder in the check UI.
     for entry in seeded:
         note = (
-            f"stack {entry.get('id')!r} is seeded in stacks.yml but has no compose.yml yet"
+            f"stack {entry.get('id')!r} is seeded in stacks.yml but has no compose.yml"
+            " or client config yet"
             " - skipping"
         )
         if args.github_output:

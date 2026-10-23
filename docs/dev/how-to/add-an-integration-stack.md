@@ -12,14 +12,16 @@ reference it.
 1. **Copy the template**: `tests/integration/stacks/_template/` →
    `tests/integration/stacks/<id>/`. Fill in `compose.yml` (real healthcheck, host-readable
    `./credentials` bind mount) and `config/basic/` (backend config + `intercede-client.toml`,
-   which change together as one atomic configuration). An **aliased** stack (`stack:` reusing
-   another's compose) ships only `config/` under its own id — no `compose.yml` of its own — and its
-   `markers` exclude the borrowed transport (e.g. `and not ssh`).
+   which change together as one atomic configuration). Stacks that test **one backend through
+   different transports** share a neutral compose directory (e.g. `stacks/slurm/`, holding
+   `compose.yml` and the backend config) via `compose:`; each such stack ships only its own
+   `config/<name>/intercede-client.toml`, and a `local-*` stack's `markers` exclude the SSH tests
+   (`and not ssh`).
 2. **Add the image** under `tests/integration/stacks/_images/<name>/` following the
    [image conventions](../reference/integration-images.md) (EL9, pinned Renovate-annotated
    `ARG`s, foreground daemons, ephemeral credentials at start).
 3. **Add the manifest entry** in `tests/integration/stacks.yml` (`id`, `configs`, `markers`,
-   optionally `versions` / `stack:` alias / `exec_in_container`).
+   optionally `versions` / `compose:` / `exec_in_container`).
 4. **Verify locally**:
 
    ```sh

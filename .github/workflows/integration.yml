@@ -48,7 +48,7 @@ jobs:
         include: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     name: ${{ matrix.stack }} / ${{ matrix.config }} / ${{ matrix.version }}
     env:
-      COMPOSE_FILE: tests/integration/stacks/${{ matrix.compose_stack }}/compose.yml
+      COMPOSE_FILE: tests/integration/stacks/${{ matrix.compose_env }}/compose.yml
       BACKEND_VERSION: ${{ matrix.version }}
     steps:
       - uses: actions/checkout@v6

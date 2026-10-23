@@ -5,7 +5,7 @@
 # one entry here plus files under stacks/<id>/; no workflow edits.
 #
 # The entries below are seeded for the three in-flight stack PRs (issues #5, #12, #13); a stack
-# becomes a CI job only once its stacks/<id>/compose.yml lands ("harmonized").
+# becomes a CI job only once its compose.yml and its own client config land ("harmonized").
 stacks:
   - id: arc-slurm
     configs: [basic]
@@ -17,15 +17,18 @@ stacks:
     versions: [lts, latest] # HTCondor LTS anchor + leading edge
     markers: "remote and htcondor"
 
+  # ssh-slurm and local-slurm share one Slurm cluster (stacks/slurm/compose.yml) and differ only
+  # in how interCEde reaches it: each keeps its own client config under stacks/<id>/config/.
   - id: ssh-slurm
+    compose: slurm
     configs: [basic]
     markers: "scheduler and slurm"
 
   - id: local-slurm
-    stack: ssh-slurm # reuse ssh-slurm's compose environment...
+    compose: slurm
     configs: [basic]
-    # ...but drive Slurm over the Local transport, so exclude the SSH-transport tests. Every
-    # future local-* alias needs the same `and not ssh` guard: the `ssh` marker is otherwise
-    # byte-identical here and in ssh-slurm, so an ssh test would run in both jobs.
+    # Local transport, so exclude the SSH-transport tests. Every future local-* stack sharing a
+    # compose environment with an ssh-* one needs the same `and not ssh` guard: the `ssh` marker
+    # is otherwise byte-identical here and in ssh-slurm, so an ssh test would run in both jobs.
     markers: "scheduler and slurm and not ssh"
     exec_in_container: true
