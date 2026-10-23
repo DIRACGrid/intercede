@@ -7,5 +7,5 @@ Organised following [Diátaxis](https://diataxis.fr/), as in the other DiracX-fa
 - [Reference](reference/index.md) — information-oriented technical description
 - [Explanations](explanations/index.md) — understanding-oriented discussion
 
-Architecture decisions are recorded separately in the [ADRs](../adr/index.md). User-facing
-documentation (`docs/user/`) is deferred until the library has a public API to document.
+User-facing documentation (`docs/user/`) is deferred until the library has a public API to
+document.

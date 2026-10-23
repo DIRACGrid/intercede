@@ -1,4 +1,4 @@
-# THE manifest: single source of truth for the integration CI matrix (IC-ADR-002 §1, §5).
+# THE manifest: single source of truth for the integration CI matrix.
 #
 # The field reference and the stack contract live in docs/dev/reference/integration-stacks.md —
 # this file is data, not documentation. Adding a stack, a configuration, or a supported version is
@@ -9,12 +9,12 @@
 stacks:
   - id: arc-slurm
     configs: [basic]
-    versions: [latest] # ARC 7.x leading edge; floor is 7.x (IC-ADR-002 §8)
+    versions: [latest] # ARC 7.x leading edge; floor is 7.x
     markers: "remote and arc"
 
   - id: htcondor
     configs: [basic]
-    versions: [lts, latest] # HTCondor LTS anchor + leading edge (IC-ADR-002 §8)
+    versions: [lts, latest] # HTCondor LTS anchor + leading edge
     markers: "remote and htcondor"
 
   - id: ssh-slurm

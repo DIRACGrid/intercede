@@ -1,11 +1,11 @@
 # Integration images — Dockerfile conventions
 
 Dockerfiles under `tests/integration/stacks/_images/` are shared across stacks (`arc/`, `slurm/`,
-`htcondor-ce/`, …) and follow [IC-ADR-002](../../adr/IC-ADR-002_integration_tests.md) §3 and §6:
+`htcondor-ce/`, …) and follow these conventions:
 
 1. **EL9 base** (`almalinux:9`), pinned by tag; backend daemons installed from **pinned RPMs**.
 2. **Every version is a Renovate-annotated `ARG`** so upstream releases arrive as red-or-green
-   Renovate PRs (Lane 1):
+   Renovate PRs:
 
    ```dockerfile
    FROM almalinux:9
@@ -22,7 +22,7 @@ Dockerfiles under `tests/integration/stacks/_images/` are shared across stacks (
    [`renovate.json`](../../../renovate.json) (per-backend grouping and the leading-edge/anchor
    convention are documented in [the Renovate reference](renovate.md)) — **adding a stack needs no
    `renovate.json` edit**, only the annotated `ARG`. The annotation carries its own `datasource`,
-   so the exact datasource for the NorduGrid/EL9 repos (an open point of IC-ADR-002) is chosen when
+   so the exact datasource for the NorduGrid/EL9 repos (still open) is chosen when
    the ARC Dockerfile lands, without touching the manager config.
 3. **Foreground entrypoint** — daemons run under a plain entrypoint script or minimal supervisor,
    never systemd, and **log to stdout/stderr** so `docker compose logs` captures everything (a
@@ -31,10 +31,10 @@ Dockerfiles under `tests/integration/stacks/_images/` are shared across stacks (
 4. **Ephemeral credentials at start**: the entrypoint mints whatever the stack needs (ARC:
    `arcctl test-ca` CA + host cert + client credential; HTCondor(-CE): IDTOKENS) and writes
    client-side material world-readable into the host-readable `./credentials` bind mount
-   (`credentials/<id>/…`, IC-ADR-002 §4). A TLS host certificate carries a SAN for the name the
+   (`credentials/<id>/…`). A TLS host certificate carries a SAN for the name the
    client dials (the compose hostname *and* `localhost` for host-run stacks); ARC on EL9 needs the
    crypto-policy set to `LEGACY` for the proxy chain.
-5. **Version windows**: where a backend declares an anchor + leading edge (IC-ADR-002 §8), the
+5. **Version windows**: where a backend declares an anchor + leading edge, the
    image accepts the version as `ARG`/build-arg so the same Dockerfile serves every entry of the
    `versions:` axis; only the leading-edge `ARG` default is Renovate-tracked.
 6. **Roles and intra-stack secrets** (multi-service stacks). A CE + LRMS or a Slurm

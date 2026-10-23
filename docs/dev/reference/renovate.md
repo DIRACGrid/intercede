@@ -24,9 +24,9 @@ The configuration is defined in [`renovate.json`](../../../renovate.json).
 
 ## Integration stack backends
 
-The integration stacks ([IC-ADR-002](../../adr/IC-ADR-002_integration_tests.md) §6) pin the backend
-daemon versions they test against, and Renovate tracks those pins so a new upstream release arrives
-as a reviewable red-or-green PR rather than tribal knowledge. Three managers are enabled for this:
+The integration stacks pin the backend daemon versions they test against, and Renovate tracks those
+pins so a new upstream release arrives as a reviewable red-or-green PR rather than tribal knowledge.
+Three managers are enabled for this:
 
 - **`docker-compose`** — upstream image tags referenced directly in a stack's `compose.yml`
   (e.g. `htcondor/mini:<tag>`).
@@ -44,7 +44,7 @@ as a reviewable red-or-green PR rather than tribal knowledge. Three managers are
 manager and per-backend grouping already configured here pick it up. Bumps are grouped per backend
 (`arc`, `htcondor`, `slurm`) and never mixed.
 
-**Version windows (§8) are half-automatic.** Renovate tracks the *leading-edge* `ARG` normally.
+**Version windows are half-automatic.** Renovate tracks the *leading-edge* `ARG` normally.
 The *older anchor* versions (e.g. an HTCondor LTS line) are human-managed: pin them and add a
 `packageRule` with `allowedVersions`/`matchCurrentVersion` (or `enabled: false`) — landed alongside
 the stack that introduces the anchor — so Renovate offers only in-major patch bumps and never

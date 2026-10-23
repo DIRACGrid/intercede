@@ -1,4 +1,4 @@
-"""Stack-aware fixtures for the integration suite (IC-ADR-002).
+"""Stack-aware fixtures for the integration suite.
 
 Tests are written once, against the interCEde contract, and parameterized by a *stack* — a named,
 self-contained backend environment described in ``stacks.yml`` and started with
@@ -55,14 +55,14 @@ def client_config(
     The client config is resolved from the entry's *own* id, never the ``stack:`` alias: an aliased
     entry (e.g. ``local-slurm`` reusing ``ssh-slurm``'s compose) drives the shared backend over a
     different transport/endpoint and so keeps its own client half. Backend config and client config
-    change together under one configuration name (IC-ADR-002 §1); this fixture is the client half.
+    change together under one configuration name; this fixture is the client half.
     """
     config_name = request.config.getoption("--config")
     path = STACKS_DIR / stack["id"] / "config" / config_name / "intercede-client.toml"
     if not path.is_file():
         msg = f"stack {stack['id']!r} has no {config_name!r} configuration ({path} is missing)"
         # In CI a *selected* stack with no config is a real failure, not a skip: an all-skipped run
-        # would report a green integration cell that verified nothing (IC-ADR-002 §5). Locally a
+        # would report a green integration cell that verified nothing. Locally a
         # skip stays convenient while a stack is still being brought up.
         if os.environ.get("CI"):
             pytest.fail(msg)

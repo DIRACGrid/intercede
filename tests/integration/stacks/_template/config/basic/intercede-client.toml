@@ -2,7 +2,7 @@
 # (the `client_config` fixture in tests/integration/conftest.py).
 #
 # Backend configuration (arc.conf, condor config, slurm.conf, mounted by compose.yml) and this
-# file change together, atomically, under one configuration name (IC-ADR-002 §1). A new
+# file change together, atomically, under one configuration name. A new
 # configuration (e.g. token vs proxy auth) is a new config/<name>/ directory plus a stacks.yml
 # `configs:` entry — never a mutation of `basic`.
 
@@ -17,4 +17,4 @@ queue = "CHANGEME"    # target queue/partition name inside the container
 
 [credentials]
 type = "CHANGEME"                # token | proxy | ssh-key
-path = "credentials/CHANGEME/"   # under the stack's host-readable ./credentials bind mount (IC-ADR-002 §4)
+path = "credentials/CHANGEME/"   # under the stack's host-readable ./credentials bind mount

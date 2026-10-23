@@ -1,4 +1,4 @@
-"""Generate the integration CI matrix from stacks.yml (IC-ADR-002 §5).
+"""Generate the integration CI matrix from stacks.yml.
 
 Run it locally to see exactly which {stack x config x version} jobs CI would run:
 

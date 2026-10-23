@@ -1,4 +1,4 @@
-# Skeleton of the manifest-driven integration workflow (IC-ADR-002 §5; scaffold issue #9).
+# Skeleton of the manifest-driven integration workflow (scaffold issue #9).
 #
 # The matrix is generated from tests/integration/stacks.yml — adding a stack, configuration or
 # version is a manifest entry plus files, never a workflow edit. generate_matrix.py emits jobs only
@@ -66,7 +66,7 @@ jobs:
       - name: Run the contract suite
         run: |
           if [ "${{ matrix.exec_in_container }}" = "true" ]; then
-            # local-* stacks: run pytest inside the batch container (IC-ADR-002 §1). The batch
+            # local-* stacks: run pytest inside the batch container. The batch
             # scheduler typically refuses to run as root (HTCondor, Slurm), so the image must ship
             # an unprivileged test user and the suite + pytest must be mounted or baked in.
             # TODO(#13/#14): mount/install the suite and pin the exec user (compose `user:` or
@@ -90,7 +90,7 @@ jobs:
 
       - name: Collect daemon logs
         if: failure()
-        # Daemons run in the foreground and log to stdout/stderr (IC-ADR-002 §3), so compose logs
+        # Daemons run in the foreground and log to stdout/stderr, so compose logs
         # are the whole failure story — a file-logging daemon redirects its log to /dev/stdout.
         run: docker compose -f "$COMPOSE_FILE" logs --no-color > compose-logs.txt || true
 

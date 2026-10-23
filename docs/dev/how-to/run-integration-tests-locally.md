@@ -1,8 +1,6 @@
 # Run the integration tests locally
 
-Everything CI does is reproducible on a laptop — a design rule of
-[IC-ADR-002](../../adr/IC-ADR-002_integration_tests.md): CI does nothing a developer cannot do
-locally.
+Everything CI does is reproducible on a laptop: CI does nothing a developer cannot do locally.
 
 ## Run one stack
 

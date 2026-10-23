@@ -1,7 +1,6 @@
 # Integration tests
 
-Backend-agnostic tests that run against real, containerised backend daemons ("stacks"), per
-[IC-ADR-002](../../docs/adr/IC-ADR-002_integration_tests.md).
+Backend-agnostic tests that run against real, containerised backend daemons ("stacks").
 
 Quickstart:
 

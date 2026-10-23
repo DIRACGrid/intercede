@@ -50,7 +50,7 @@ asyncio_mode = "auto"
 markers = [
   "backend_only: restrict a test to the named backend fixture(s)",
   "xfail_backend: strict xfail a test on the named backend fixture(s)",
-  # Integration-suite markers (IC-ADR-002 §2): stacks.yml selects per-stack subsets with -m.
+  # Integration-suite markers: stacks.yml selects per-stack subsets with -m.
   "remote: drives a remote CE backend (grid gateway: ARC, HTCondor-CE)",
   "scheduler: drives a Transport x Scheduler composition (BatchBackend)",
   "arc: requires an ARC CE",

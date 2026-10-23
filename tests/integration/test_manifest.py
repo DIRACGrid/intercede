@@ -1,4 +1,4 @@
-"""Validate stacks.yml — the single source of truth for the CI matrix (IC-ADR-002 §1).
+"""Validate stacks.yml — the single source of truth for the CI matrix.
 
 These tests need no running stack: they keep the manifest schema honest and enforce the stack
 contract layout (docs/dev/reference/integration-stacks.md) for every stack that has landed. They

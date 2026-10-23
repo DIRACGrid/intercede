@@ -25,7 +25,7 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "Track pinned backend versions in stack image Dockerfiles via `# renovate:`-annotated ARGs (IC-ADR-002 §6). The datasource/depName/versioning ride in the annotation, so a new stack image needs no renovate.json edit.",
+      "description": "Track pinned backend versions in stack image Dockerfiles via `# renovate:`-annotated ARGs. The datasource/depName/versioning ride in the annotation, so a new stack image needs no renovate.json edit.",
       "fileMatch": [
         "(^|/)tests/integration/stacks/_images/.+/Dockerfile$"
       ],
@@ -82,21 +82,21 @@
       "labels": ["dependencies", "testing"]
     },
     {
-      "description": "Group ARC backend bumps, never mixed with other backends so a red PR names its culprit (IC-ADR-002 §6). Renovate tracks the leading-edge ARG; anchors are human-managed (§8).",
+      "description": "Group ARC backend bumps, never mixed with other backends so a red PR names its culprit. Renovate tracks the leading-edge ARG; anchors are human-managed.",
       "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
       "matchPackageNames": ["/nordugrid-arc/"],
       "groupName": "ARC backend (integration stack)",
       "labels": ["dependencies", "integration-stack", "arc"]
     },
     {
-      "description": "Group HTCondor / HTCondor-CE backend bumps (IC-ADR-002 §6, §8)",
+      "description": "Group HTCondor / HTCondor-CE backend bumps",
       "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
       "matchPackageNames": ["/htcondor/"],
       "groupName": "HTCondor backend (integration stack)",
       "labels": ["dependencies", "integration-stack", "htcondor"]
     },
     {
-      "description": "Group Slurm backend bumps (IC-ADR-002 §6, §8)",
+      "description": "Group Slurm backend bumps",
       "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
       "matchPackageNames": ["/slurm/"],
       "groupName": "Slurm backend (integration stack)",

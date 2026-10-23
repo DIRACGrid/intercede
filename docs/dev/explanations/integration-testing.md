@@ -1,7 +1,6 @@
 # Why integration stacks — testing against real backend daemons
 
-The full reasoning is [IC-ADR-002](../../adr/IC-ADR-002_integration_tests.md); this page is the
-short version plus the phasing plan.
+Why the integration suite runs against real backend daemons, and how it is phased.
 
 ## Why real daemons
 

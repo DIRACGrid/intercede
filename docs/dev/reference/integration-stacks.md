@@ -1,7 +1,6 @@
 # Integration stacks — layout, manifest schema, stack contract
 
-Reference for the integration-test infrastructure decided in
-[IC-ADR-002](../../adr/IC-ADR-002_integration_tests.md).
+Reference for the integration-test infrastructure.
 
 ## Layout
 
@@ -28,7 +27,7 @@ tests/integration/
 | `id` | yes | Stack name; also the directory under `stacks/` unless `stack:` is set |
 | `stack` | no | Alias: reuse another stack's compose environment (e.g. `local-slurm` → `ssh-slurm`) |
 | `configs` | yes | Configuration names under `stacks/<id>/config/`; start with `[basic]` |
-| `versions` | no | Backend support-window entries to run (IC-ADR-002 §8); absent = single leading-edge pin |
+| `versions` | no | Backend support-window entries to run; absent = single leading-edge pin |
 | `markers` | yes | `pytest -m` expression selecting the applicable contract-suite subset |
 | `exec_in_container` | no | Run pytest inside the backend container instead of against it (default `false`) |
 
@@ -59,21 +58,21 @@ A stack that lands in `stacks/<id>/` commits to all of the following (enforced p
 2. **Healthchecks on every service.** `up --wait` gates on them; hand-rolled sleep-and-retry
    loops are not accepted.
 3. **Foreground daemons, never systemd.** A plain entrypoint or minimal supervisor — privileged
-   systemd containers are fragile on GitHub runners and hide daemon logs from `docker logs`
-   (IC-ADR-002 §3). Daemons **log to stdout/stderr** so `docker compose logs` is the whole failure
-   story; a file-logging daemon redirects its log to `/dev/stdout` rather than expecting a bespoke
-   log-directory upload (the CI failure artifact is compose logs only).
+   systemd containers are fragile on GitHub runners and hide daemon logs from `docker logs`. Daemons
+   **log to stdout/stderr** so `docker compose logs` is the whole failure story; a file-logging
+   daemon redirects its log to `/dev/stdout` rather than expecting a bespoke log-directory upload
+   (the CI failure artifact is compose logs only).
 4. **Images from `stacks/_images/`,** EL9 base, pinned Renovate-annotated `ARG`s (see
    [image conventions](integration-images.md)).
 5. **Ephemeral credentials, minted at container start** into the shared, host-readable
    `./credentials` bind mount (gitignored) — never committed, and never a Docker *named* volume
    (host pytest cannot read a root-owned named volume for `exec_in_container: false` stacks). The
-   layout `credentials/<id>/…` is the interface between stack and harness (IC-ADR-002 §4). Mint
+   layout `credentials/<id>/…` is the interface between stack and harness. Mint
    throwaway Test-CA material world-readable; the harness copies anything needing private modes
    (0400/0600) into a private dir itself.
 6. **Configurations are atomic directories.** `config/<name>/` holds the backend config *and*
    `intercede-client.toml` together; a new auth/filesystem/queue variant is a new directory plus
-   a `configs:` entry in `stacks.yml`, never a mutation of `basic` (IC-ADR-002 §7).
+   a `configs:` entry in `stacks.yml`, never a mutation of `basic`.
 7. **One `stacks.yml` entry.** That is how CI finds the stack — adding a stack requires no
    workflow edits.
 8. **Host reachability + TLS naming** (host-run stacks). A stack the harness drives from the host
@@ -102,6 +101,6 @@ the Phase-2 contract suite that calls it, alongside the interCEde protocols — 
 not part of this scaffold, whose signature would otherwise be guessed ahead of its callers.
 
 A *selected* stack whose `intercede-client.toml` is missing **fails** under CI (`$CI` set) rather
-than skipping: an all-skipped run would report a green integration cell that verified nothing
-(IC-ADR-002 §5). Locally the same case skips, which stays convenient while a stack is being
+than skipping: an all-skipped run would report a green integration cell that verified nothing.
+Locally the same case skips, which stays convenient while a stack is being
 brought up.
