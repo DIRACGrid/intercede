@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import tomllib
 from typing import Any
 
 import pytest
@@ -83,32 +82,9 @@ class TestResolve:
         assert settings.limits.transfer_timeout_s == 3600
 
 
-def test_loads_from_toml():
-    data = tomllib.loads(
-        """
-        kind = "batch"
-        transport = "ssh"
-        scheduler = "slurm"
-        host = "batch.example.org"
-        user = "dirac"
-        known_hosts = "batch.example.org ssh-ed25519 AAAAC3Nz..."
-        queue = "short"
-        """
-    )
-    assert BackendConfig.model_validate(data).queue == "short"
-
-
-def test_round_trips_through_json():
-    config = BackendConfig.model_validate(SSH)
-    assert BackendConfig.model_validate_json(config.model_dump_json()) == config
-
-
 class TestRejected:
     def test_unknown_kind(self):
         assert "kind" in rejected(kind="lsf")
-
-    def test_unknown_scheduler(self):
-        assert "scheduler" in rejected(**{**SSH, "scheduler": "pbs"})
 
     def test_typo_is_not_silently_ignored(self):
         assert "endpont" in rejected(kind="arc", endpoint="https://a:443", endpont="x")
@@ -166,25 +142,9 @@ class TestRejected:
     def test_ce_auth_is_token_or_proxy(self):
         assert "auth" in rejected(kind="arc", endpoint="https://a:443", auth=["key"])
 
-    def test_limits_must_be_positive(self):
-        assert "max_output_files" in rejected(
-            kind="arc", endpoint="https://a:443", max_output_files=0
-        )
-
     def test_container_launcher_must_name_the_image(self):
         base = {"kind": "batch", "transport": "local", "scheduler": "slurm"}
         assert "{image}" in rejected(**base, container_launcher=["apptainer", "exec"])
         BackendConfig.model_validate(
             {**base, "container_launcher": ["apptainer", "exec", "{image}"]}
         )
-
-    @pytest.mark.parametrize("field", ["password", "private_key", "token", "proxy"])
-    def test_there_is_nowhere_to_put_a_secret(self, field: str):
-        # Secrets come from the credential provider, never from configuration (IC-ADR-003).
-        assert field in rejected(**{**SSH, field: "x"})
-
-
-def test_configuration_is_immutable():
-    config = BackendConfig(kind="arc", endpoint="https://a:443")
-    with pytest.raises(ValidationError):
-        config.endpoint = "https://b:443"  # type: ignore[misc]

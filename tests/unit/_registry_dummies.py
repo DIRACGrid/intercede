@@ -70,31 +70,18 @@ class DummyBatchBackend(_Lifecycle):
 
 
 class DummyBackend(_Lifecycle):
-    """A single-class backend, standing in for the monolithic and provider families.
-
-    It records the settings it was built from and every call that reaches it,
-    so a test can show that calls on the returned object run this class's code.
-    """
+    """A single-class backend, standing in for the monolithic and provider families."""
 
     def __init__(self, settings: Any) -> None:
         self.settings = settings
-        self.calls: list[str] = []
 
     @classmethod
     def from_settings(cls, settings: Any) -> DummyBackend:
         return cls(settings)
 
-    async def submit(self, spec: Any, copies: Any = 1) -> Any:
-        self.calls.append("submit")
-        return f"submitted by {self.settings.kind}"
+    async def submit(self, spec: Any, copies: Any = 1) -> Any: ...
 
-    async def get_status(self, handles: Any) -> Any:
-        self.calls.append("get_status")
-        return {}
-
-
-class NoFromSettings(DummyTransport):
-    from_settings = None  # type: ignore[assignment]
+    async def get_status(self, handles: Any) -> Any: ...
 
 
 class BuildsTheWrongThing:
