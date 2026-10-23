@@ -8,4 +8,4 @@ DiracX projects:
 - [Reference](reference/index.md): technical details
 - [Explanations](explanations/index.md): why things are done this way
 
-User documentation (`docs/user/`) will come once the library has a public API.
+For code that uses interCEde, see the [user documentation](../user/index.md).
