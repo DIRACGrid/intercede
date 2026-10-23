@@ -1,0 +1,91 @@
+# Matrix comes from tests/integration/stacks.yml. Not a required check until #14.
+name: Integration tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  pull_request:
+    paths:
+      - "tests/integration/**"
+      - ".github/workflows/integration.yml"
+      - "tests/conftest.py"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Generate {stack x config x version} matrix from stacks.yml
+        id: gen
+        run: python3 tests/integration/generate_matrix.py --github-output
+
+  integration:
+    needs: matrix
+    if: needs.matrix.outputs.matrix != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    name: ${{ matrix.stack }} / ${{ matrix.config }} / ${{ matrix.version }}
+    env:
+      COMPOSE_FILE: tests/integration/stacks/${{ matrix.compose_env }}/compose.yml
+      BACKEND_VERSION: ${{ matrix.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Start the stack (waits for the healthchecks)
+        run: docker compose -f "$COMPOSE_FILE" up --wait
+
+      - name: Apply workarounds
+        if: matrix.exec_in_container == false
+        run: |
+          # Workaround for https://github.com/prefix-dev/pixi/issues/3762
+          sed -i.bak 's@editable = true@editable = false@g' pyproject.toml
+          rm pyproject.toml.bak
+      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+        if: matrix.exec_in_container == false
+        with:
+          pixi-version: v0.82.0
+          cache: false
+          environments: py313
+
+      - name: Run the contract suite
+        run: |
+          if [ "${{ matrix.exec_in_container }}" = "true" ]; then
+            # TODO(#13/#14): ship the suite in the image and exec as an unprivileged user.
+            runner=(docker compose -f "$COMPOSE_FILE" exec -T backend pytest)
+          else
+            runner=(pixi run -e py313 pytest)
+          fi
+          set +e
+          "${runner[@]}" tests/integration -m "${{ matrix.markers }}" \
+            --stack="${{ matrix.stack }}" --config="${{ matrix.config }}"
+          rc=$?
+          # Exit 5 = no tests selected; tolerated until the contract suite lands.
+          if [ "$rc" -eq 5 ]; then
+            echo "::notice::stack '${{ matrix.stack }}': no tests matched markers '${{ matrix.markers }}' (pytest exit 5) - passing until the contract suite lands"
+            rc=0
+          fi
+          exit "$rc"
+
+      - name: Collect daemon logs
+        if: failure()
+        run: docker compose -f "$COMPOSE_FILE" logs --no-color > compose-logs.txt || true
+
+      - name: Upload logs as artifacts
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: logs-${{ matrix.stack }}-${{ matrix.config }}-${{ matrix.version }}
+          path: compose-logs.txt

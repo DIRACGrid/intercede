@@ -1,0 +1,34 @@
+# Copy to stacks/<id>/compose.yml. Contract: docs/dev/reference/integration-stacks.md
+# The harness drives the service named `backend`.
+services:
+  backend:
+    # image: ghcr.io/diracgrid/intercede-testenv/<name>:${BACKEND_VERSION:-latest}
+    build:
+      context: ../_images/CHANGEME
+      args:
+        BACKEND_VERSION: ${BACKEND_VERSION:-latest}
+    hostname: backend
+    networks:
+      - stack
+    # Host-run harness: publish the port and put the same host:port in intercede-client.toml.
+    # ports:
+    #   - "127.0.0.1:2222:22"   # e.g. sshd
+    volumes:
+      # bind mount, not a named volume: the host-run harness must read it
+      - ./credentials:/shared/credentials
+      # - ./config/basic/backend.conf:/etc/…:ro   # backend half of the configuration
+    healthcheck:
+      # e.g.:
+      #   Slurm:       ["CMD-SHELL", "sinfo | grep -q idle"]
+      #   HTCondor:    ["CMD", "condor_status", "-limit", "1"]
+      #   HTCondor-CE: ["CMD", "condor_ce_status"]
+      #   ARC REST:    ["CMD-SHELL", "curl -ksf https://localhost:443/arex/rest/1.0 -o /dev/null"]
+      #   sshd:        ["CMD-SHELL", "true < /dev/tcp/localhost/22"]
+      test: ["CMD", "false"] # CHANGEME
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 30s
+
+networks:
+  stack: {}
