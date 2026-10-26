@@ -31,7 +31,7 @@ from intercede.config import BackendConfig
 from intercede.exceptions import ConfigurationError, RegistryError
 from intercede.protocols import JobBackend
 
-__all__ = ["available", "backend"]
+__all__ = ["available", "get_backend"]
 
 # Name -> "module:Class". A name is listed only once its class exists; a valid
 # configuration asking for anything else gets a RegistryError naming what is
@@ -52,10 +52,10 @@ _GROUPS: dict[str, dict[str, str]] = {
 }
 
 
-def backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
+def get_backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
     """Build the backend a configuration describes.
 
-    The backend is returned unopened: use it as ``async with registry.backend(config) as ce``.
+    The backend is returned unopened: use it as ``async with registry.get_backend(config) as ce``.
     Construction does no I/O, so building a backend for an unreachable resource succeeds.
 
     Args:
