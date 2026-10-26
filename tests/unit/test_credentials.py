@@ -8,12 +8,19 @@ from typing import Any, Self
 
 import pytest
 
-from intercede import AuthenticationError, InterCEdeError
-from intercede._backends.credentials import DEFAULT_MARGIN, is_stale, refresh_if_stale
+from intercede import AuthenticationError, InterCEdeError, validate_config
+from intercede._backends.credentials import (
+    DEFAULT_MARGIN,
+    credential_requirements,
+    is_stale,
+    refresh_if_stale,
+)
 from intercede.auth import (
     BearerToken,
     CredentialRequirements,
     CredentialSet,
+    SSHPassword,
+    SSHPrivateKey,
     X509Proxy,
 )
 
@@ -139,3 +146,60 @@ class TestProviderFailures:
         provider = Recording(CredentialSet([token(-timedelta(minutes=1))]))
         with pytest.raises(AuthenticationError, match="expired"):
             await refresh_if_stale(None, TOKEN_ONLY, provider, now=NOW)
+
+
+# --------------------------------------------------------------------------
+# From a configuration to what to ask the provider for
+# --------------------------------------------------------------------------
+
+ARC: dict[str, Any] = {"kind": "arc", "endpoint": "https://arc.example.org:443"}
+CE: dict[str, Any] = {"kind": "htcondor-ce", "endpoint": "ce.example.org:9619"}
+SSH: dict[str, Any] = {
+    "kind": "batch",
+    "transport": "ssh",
+    "scheduler": "slurm",
+    "host": "batch.example.org",
+    "user": "dirac",
+    "known_hosts": "batch.example.org ssh-ed25519 AAAAC3Nz...",
+}
+
+
+class TestCredentialRequirements:
+    @pytest.mark.parametrize("base", [ARC, CE], ids=["arc", "htcondor-ce"])
+    @pytest.mark.parametrize(
+        ("auth", "kinds"),
+        [({}, {BearerToken}), ({"auth": ["token", "proxy"]}, {BearerToken, X509Proxy})],
+        ids=["default", "token+proxy"],
+    )
+    def test_a_ce_asks_for_its_endpoint(
+        self, base: dict[str, Any], auth: dict[str, Any], kinds: set[type]
+    ):
+        scopes = frozenset({"compute.create"})
+        requirements = credential_requirements(
+            validate_config({**base, **auth}), scopes
+        )
+        assert requirements is not None
+        assert requirements.kinds == kinds
+        assert requirements.resource == base["endpoint"]
+        assert requirements.scopes == scopes
+
+    @pytest.mark.parametrize(
+        ("auth", "kind"), [("key", SSHPrivateKey), ("password", SSHPassword)]
+    )
+    def test_ssh_asks_for_the_login(self, auth: str, kind: type):
+        config = validate_config({**SSH, "auth": auth, "port": 2222})
+        requirements = credential_requirements(config)
+        assert requirements is not None
+        assert requirements.kinds == {kind}
+        assert requirements.resource == "dirac@batch.example.org:2222"
+
+    @pytest.mark.parametrize(
+        "data",
+        [
+            {**SSH, "auth": "agent"},
+            {"kind": "batch", "transport": "local", "scheduler": "slurm"},
+        ],
+        ids=["ssh-agent", "local"],
+    )
+    def test_nothing_to_ask_for(self, data: dict[str, Any]):
+        assert credential_requirements(validate_config(data)) is None

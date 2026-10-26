@@ -17,6 +17,12 @@ plugins:
             show_source: false
             members_order: source
             merge_init_into_class: true
+            inherited_members: true
+            # Field tables for the configuration models, read from the models
+            # themselves, so the documentation cannot drift from the code.
+            extensions:
+              - griffe_pydantic:
+                  schema: false
 
 validation:
   links:

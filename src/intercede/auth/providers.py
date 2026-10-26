@@ -21,7 +21,7 @@ class StaticCredentials:
     but it is still a context manager, like every provider::
 
         async with StaticCredentials([SSHPrivateKey(pem=key)]) as credentials:
-            backend = registry.backend(config, credentials)
+            backend = registry.get_backend(config, credentials)
     """
 
     def __init__(self, credentials: CredentialSet | Iterable[Credential] = ()) -> None:

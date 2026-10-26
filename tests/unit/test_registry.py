@@ -10,13 +10,14 @@ from typing import Any
 import pytest
 
 from intercede import (
-    BackendConfig,
+    BatchSSHConfig,
+    CloudConfig,
     ConfigurationError,
     JobBackend,
     RegistryError,
     registry,
 )
-from intercede._backends.config import CloudSettings, FakeSettings
+from intercede._backends.config import FakeSettings
 from intercede.auth import CredentialSet, StaticCredentials
 from intercede.registry import _build, _load
 
@@ -70,7 +71,7 @@ class TestBuilds:
 
     @pytest.mark.parametrize(
         "config",
-        [CLOUD, BackendConfig.model_validate(CLOUD)],
+        [CLOUD, CloudConfig(**CLOUD)],
         ids=["mapping", "object"],
     )
     def test_a_single_class_backend_gets_its_settings_and_provider(
@@ -78,19 +79,20 @@ class TestBuilds:
     ):
         monkeypatch.setitem(registry._BACKENDS, "cloud", f"{DUMMIES}:DummyBackend")
         provider = StaticCredentials()
-        built: Any = registry.backend(config, provider)
-        assert isinstance(built.settings, CloudSettings)
+        built: Any = registry.get_backend(config, provider)
+        assert type(built).__name__ == "DummyBackend"
+        assert isinstance(built.settings, CloudConfig)
         assert built.credentials is provider
 
     def test_a_batch_backend_is_composed_of_its_parts(self, composed: None):
         provider = StaticCredentials()
-        built: Any = registry.backend({**SSH_SLURM, "queue": "short"}, provider)
+        built: Any = registry.get_backend({**SSH_SLURM, "queue": "short"}, provider)
         assert type(built).__name__ == "DummyBatchBackend"
-        # The transport gets only its own settings, and the credentials.
-        assert built.transport.settings.kind == "ssh"
+        # Transport and scheduler each get the whole batch configuration; the
+        # transport, which authenticates, also gets the provider.
+        assert isinstance(built.transport.settings, BatchSSHConfig)
         assert built.transport.settings.host == "batch.example.org"
         assert built.transport.credentials is provider
-        # The scheduler gets the batch settings.
         assert built.scheduler.settings.queue == "short"
 
     async def test_building_asks_the_provider_nothing(
@@ -105,15 +107,15 @@ class TestBuilds:
                 Watching.asked += 1
                 return await super().get(requirements)
 
-        registry.backend(SSH_SLURM, Watching())
-        registry.backend(CLOUD, Watching())
+        registry.get_backend(SSH_SLURM, Watching())
+        registry.get_backend(CLOUD, Watching())
         assert Watching.asked == 0  # construction does no I/O
 
 
 class TestRefused:
     def test_invalid_configuration_keeps_the_details(self):
         with pytest.raises(ConfigurationError) as exc_info:
-            registry.backend({"kind": "arc"}, CREDENTIALS)
+            registry.get_backend({"kind": "arc"}, CREDENTIALS)
         assert "endpoint: required for kind='arc'" in str(exc_info.value)
 
     @pytest.mark.parametrize(
@@ -121,7 +123,7 @@ class TestRefused:
     )
     def test_credentials_must_be_a_provider(self, composed: None, credentials: Any):
         with pytest.raises(ConfigurationError, match="must be a CredentialProvider"):
-            registry.backend(LOCAL_SLURM, credentials)
+            registry.get_backend(LOCAL_SLURM, credentials)
 
     @pytest.mark.parametrize(
         "config",
@@ -130,29 +132,28 @@ class TestRefused:
     )
     def test_valid_but_not_shipped_yet(self, config: dict[str, Any]):
         with pytest.raises(
-            RegistryError,
-            match=f"backend '{config['kind']}' is not available",
+            RegistryError, match=f"backend '{config['kind']}' is not available"
         ):
-            registry.backend(config, CREDENTIALS)
+            registry.get_backend(config, CREDENTIALS)
 
     def test_composed_part_not_shipped_yet(self):
         with pytest.raises(RegistryError, match="transport 'ssh' is not available"):
-            registry.backend(SSH_SLURM, CREDENTIALS)
+            registry.get_backend(SSH_SLURM, CREDENTIALS)
 
     def test_an_entry_that_cannot_be_imported(
         self, composed: None, monkeypatch: pytest.MonkeyPatch
     ):
         monkeypatch.setitem(registry._TRANSPORTS, "ssh", "tests.unit.does_not_exist:X")
         with pytest.raises(RegistryError, match="cannot be imported") as exc_info:
-            registry.backend(SSH_SLURM, CREDENTIALS)
+            registry.get_backend(SSH_SLURM, CREDENTIALS)
         assert isinstance(exc_info.value.__cause__, ImportError)
 
     @pytest.mark.parametrize(
-        ("table", "name", "config", "protocol"),
+        ("table", "name", "protocol"),
         [
-            ("_TRANSPORTS", "local", LOCAL_SLURM, "Transport"),
-            ("_SCHEDULERS", "slurm", LOCAL_SLURM, "Scheduler"),
-            ("_BACKENDS", "batch", LOCAL_SLURM, "JobBackend"),
+            ("_TRANSPORTS", "local", "Transport"),
+            ("_SCHEDULERS", "slurm", "Scheduler"),
+            ("_BACKENDS", "batch", "JobBackend"),
         ],
     )
     def test_what_breaks_its_protocol_is_refused(
@@ -161,14 +162,13 @@ class TestRefused:
         monkeypatch: pytest.MonkeyPatch,
         table: str,
         name: str,
-        config: dict[str, Any],
         protocol: str,
     ):
         monkeypatch.setitem(
             getattr(registry, table), name, f"{DUMMIES}:BuildsTheWrongThing"
         )
         with pytest.raises(RegistryError, match=f"which is not a {protocol}"):
-            registry.backend(config, CREDENTIALS)
+            registry.get_backend(LOCAL_SLURM, CREDENTIALS)
 
 
 class TestAvailable:
@@ -176,11 +176,13 @@ class TestAvailable:
         assert registry.available() == {"backend": (), "transport": (), "scheduler": ()}
 
     def test_lists_only_what_a_configuration_can_ask_for(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, composed: None, monkeypatch: pytest.MonkeyPatch
     ):
         monkeypatch.setitem(registry._SCHEDULERS, "lsf", f"{DUMMIES}:DummyScheduler")
-        assert "lsf" not in registry.available()["scheduler"]
-        assert "fake" not in registry.available()["backend"]
+        listing = registry.available()
+        assert listing["transport"] == ("local", "ssh")
+        assert "lsf" not in listing["scheduler"]
+        assert "fake" not in listing["backend"]
 
 
 class TestLazyImports:
@@ -198,5 +200,5 @@ class TestLazyImports:
         monkeypatch.delitem(sys.modules, DUMMIES, raising=False)
         registry.available()
         assert DUMMIES not in sys.modules  # listing imports nothing
-        registry.backend(LOCAL_SLURM, CREDENTIALS)
+        registry.get_backend(LOCAL_SLURM, CREDENTIALS)
         assert DUMMIES in sys.modules
