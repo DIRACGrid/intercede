@@ -36,20 +36,11 @@ SSH: dict[str, Any] = {
 }
 
 
-def settings_of(data: dict[str, Any]) -> Any:
-    return resolve(BackendConfig.model_validate(data))
-
-
 def rejected(**data: Any) -> str:
     """Return the message for a configuration that must be refused."""
     with pytest.raises(ConfigurationError) as exc_info:
         validate_config(data)
     return str(exc_info.value)
-
-
-# --------------------------------------------------------------------------
-# From the flat model to the settings of one backend
-# --------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
