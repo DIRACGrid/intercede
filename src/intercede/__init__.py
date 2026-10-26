@@ -6,7 +6,15 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as get_version
 
 from intercede import registry
-from intercede.config import BackendConfig
+from intercede.config import (
+    ARCConfig,
+    BackendConfig,
+    BatchLocalConfig,
+    BatchSSHConfig,
+    CloudConfig,
+    HTCondorCEConfig,
+    validate_config,
+)
 from intercede.exceptions import (
     AuthenticationError,
     ConfigurationError,
@@ -76,7 +84,13 @@ __all__ = [
     "Submission",
     "SubmissionSpec",
     # configuration
+    "ARCConfig",
     "BackendConfig",
+    "BatchLocalConfig",
+    "BatchSSHConfig",
+    "CloudConfig",
+    "HTCondorCEConfig",
+    "validate_config",
     # exceptions
     "AuthenticationError",
     "ConfigurationError",
