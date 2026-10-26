@@ -6,11 +6,11 @@ unit conformance suite runs against. Nothing leaves the process.
 
 from __future__ import annotations
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import TracebackType
-from typing import Callable, Self
+from typing import Self
 
 from intercede._backends.config import FakeSettings
 from intercede.exceptions import (
@@ -95,7 +95,14 @@ class FakeBackend:
 
     @classmethod
     def from_settings(cls, settings: FakeSettings) -> Self:
-        """Build the fake from its settings; how the registry constructs it."""
+        """Build the fake from its settings; how the registry constructs it.
+
+        Args:
+            settings: The fake's settings: only the resource it reports.
+
+        Returns:
+            A new fake, not yet opened.
+        """
         return cls(resource=settings.resource)
 
     # -- lifecycle ---------------------------------------------------------

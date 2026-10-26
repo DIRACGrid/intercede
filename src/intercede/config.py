@@ -53,8 +53,7 @@ class BackendConfig(_Model):
     ``arc``, ``htcondor-ce``      ``endpoint``, ``auth`` (``token``, ``proxy``)
     ``cloud``                     ``endpoint``, ``driver``, ``vm_image``,
                                   ``vm_flavor``, ``driver_options``,
-                                  ``vm_networks``, ``vm_ssh_key``,
-                                  ``vm_max_lifetime_s``
+                                  ``vm_networks``, ``vm_ssh_key``
     ``batch`` + ``local``         ``scheduler``
     ``batch`` + ``ssh``           ``scheduler``, ``host``, ``user``,
                                   ``known_hosts``, ``port``, ``jump_host``,
@@ -94,7 +93,6 @@ class BackendConfig(_Model):
     vm_flavor: str | None = None  # a flavor ID, or "name:<flavor name>"
     vm_networks: Sequence[str] | None = None
     vm_ssh_key: str | None = None  # the NAME of a key pair known to the cloud
-    vm_max_lifetime_s: PositiveInt | None = None
 
     # How to authenticate: which credentials the provider must supply, never
     # the credentials themselves. Defaults to a token for a CE, a key for SSH.
@@ -121,7 +119,16 @@ class BackendConfig(_Model):
 
 
 def _describe(config: BackendConfig, exc: ValidationError) -> str:
-    """Report problems by the flat field names the consumer wrote."""
+    """Report problems by the flat field names the consumer wrote.
+
+    Args:
+        config: The configuration that was refused.
+        exc: What validating its resolved settings raised.
+
+    Returns:
+        One line per problem, joined with "; ", such as
+        "host: required for kind='batch' with transport='ssh'".
+    """
     fields = set(BackendConfig.model_fields)
     lines = []
     for error in exc.errors():
@@ -137,6 +144,14 @@ def _describe(config: BackendConfig, exc: ValidationError) -> str:
 
 
 def _choice(config: BackendConfig) -> str:
+    """Name the backend a configuration chose, for an error message.
+
+    Args:
+        config: The configuration.
+
+    Returns:
+        For example "kind='arc'", or "kind='batch' with transport='ssh'".
+    """
     if config.kind != "batch":
         return f"kind={config.kind!r}"
     return f"kind='batch' with transport={config.transport!r}"

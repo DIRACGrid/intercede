@@ -69,7 +69,6 @@ def backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
         ConfigurationError: The configuration is invalid.
         RegistryError: The configuration is valid, but this version of
             interCEde does not provide what it asks for.
-
     """
     if not isinstance(config, BackendConfig):
         try:
@@ -85,7 +84,6 @@ def available() -> dict[str, tuple[str, ...]]:
     Returns:
         The names per group, sorted, for tooling. For example
         ``{"backend": ("arc", "batch"), "transport": ("ssh",), ...}``.
-
     """
     public = {
         "backend": _choices(BackendConfig.model_fields["kind"].annotation),
@@ -104,7 +102,14 @@ def available() -> dict[str, tuple[str, ...]]:
 
 
 def _choices(annotation: Any) -> set[str]:
-    """Collect the string values of a Literal, also inside ``Literal[...] | None``."""
+    """Collect the string values of a Literal, also inside ``Literal[...] | None``.
+
+    Args:
+        annotation: A field's type annotation.
+
+    Returns:
+        Every string the annotation allows; empty when it is not a Literal.
+    """
     values: set[str] = set()
     for arg in get_args(annotation):
         if isinstance(arg, str):
@@ -115,7 +120,19 @@ def _choices(annotation: Any) -> set[str]:
 
 
 def _build(settings: BackendSettings | FakeSettings) -> JobBackend:
-    """Build a backend from validated settings. Internal: the test suites call it directly."""
+    """Build a backend from validated settings. Internal: the test suites call it directly.
+
+    Args:
+        settings: The resolved settings of one backend, or of the fake.
+
+    Returns:
+        The backend, not yet opened. A ``batch`` backend is composed of the
+        transport and the scheduler its settings name.
+
+    Raises:
+        RegistryError: Something the settings name is not available, or what
+            was built does not satisfy its protocol.
+    """
     if not isinstance(settings, BatchSettings):
         built = _load("backend", settings.kind).from_settings(settings)
         result: JobBackend = _checked("backend", settings.kind, built, JobBackend)
@@ -143,7 +160,19 @@ def _build(settings: BackendSettings | FakeSettings) -> JobBackend:
 
 @cache
 def _load(group: str, name: str) -> Any:
-    """Import the class registered under ``name``, and only that one."""
+    """Import the class registered under ``name``, and only that one.
+
+    Args:
+        group: ``"backend"``, ``"transport"`` or ``"scheduler"``.
+        name: The name the class is registered under, such as ``"ssh"``.
+
+    Returns:
+        The registered class. It is cached, so each entry is imported once.
+
+    Raises:
+        RegistryError: Nothing is registered under ``name``, or the entry
+            cannot be imported or has no ``from_settings``.
+    """
     table = _GROUPS[group]
     if name not in table:
         offered = ", ".join(available()[group]) or "none yet"
@@ -171,7 +200,20 @@ def _load(group: str, name: str) -> Any:
 
 
 def _checked(group: str, name: str, built: Any, protocol: type) -> Any:
-    """Refuse an object that does not satisfy its protocol."""
+    """Refuse an object that does not satisfy its protocol.
+
+    Args:
+        group: The registry group the object was built from, for the error.
+        name: The registered name it was built from, for the error.
+        built: What the registered class built.
+        protocol: The runtime-checkable protocol it must satisfy.
+
+    Returns:
+        ``built`` itself, once checked.
+
+    Raises:
+        RegistryError: ``built`` does not satisfy ``protocol``.
+    """
     if not isinstance(built, protocol):
         raise RegistryError(
             f"{group} {name!r} built a {type(built).__name__}, which is not a {protocol.__name__}"

@@ -30,6 +30,8 @@ class Limits(_Model):
 
 
 class _BackendSettings(_Model):
+    """What every backend with a queue shares: the default queue, a container launcher and limits."""
+
     queue: str | None = None
     container_launcher: Sequence[str] | None = None
     limits: Limits = Limits()
@@ -46,6 +48,8 @@ class _BackendSettings(_Model):
 
 
 class ARCSettings(_BackendSettings):
+    """An ARC CE, reached at its endpoint."""
+
     kind: Literal["arc"]
     endpoint: str
     # All of these together: a token for the channel, a proxy
@@ -60,6 +64,8 @@ class ARCSettings(_BackendSettings):
 
 
 class HTCondorCESettings(_BackendSettings):
+    """An HTCondor-CE, reached at its endpoint."""
+
     kind: Literal["htcondor-ce"]
     endpoint: str
     # The token authenticates the channel; "proxy" adds an X.509 proxy to the
@@ -99,7 +105,6 @@ class CloudSettings(_Model):
     vm_flavor: str  # a flavor ID, or "name:<flavor name>"
     vm_networks: Sequence[str] = ()
     vm_ssh_key: str | None = None  # the NAME of a key pair known to the cloud
-    vm_max_lifetime_s: PositiveInt = 14 * 24 * 3600  # older VMs are removed
 
     @model_validator(mode="after")
     def _no_secret_driver_options(self) -> Self:
@@ -121,10 +126,14 @@ class CloudSettings(_Model):
 
 
 class LocalTransportSettings(_Model):
+    """Run the scheduler's commands on this host."""
+
     kind: Literal["local"]
 
 
 class SSHTransportSettings(_Model):
+    """Run the scheduler's commands on a remote host over SSH."""
+
     kind: Literal["ssh"]
     host: str
     port: PositiveInt = 22
@@ -142,6 +151,8 @@ class SSHTransportSettings(_Model):
 
 
 class BatchSettings(_BackendSettings):
+    """A batch system: a scheduler reached through a transport."""
+
     kind: Literal["batch"]
     transport: Annotated[
         LocalTransportSettings | SSHTransportSettings, Discriminator("kind")
@@ -168,10 +179,16 @@ _SETTINGS: TypeAdapter[BackendSettings] = TypeAdapter(BackendSettings)
 def resolve(config: BackendConfig) -> BackendSettings:
     """Turn the consumer's flat configuration into the settings of one backend.
 
+    Args:
+        config: The consumer's configuration.
+
+    Returns:
+        The settings of the backend ``config.kind`` names. For ``batch``, the
+        transport's fields are moved into a nested ``transport`` object.
+
     Raises:
         pydantic.ValidationError: A field is missing, invalid, or does not
             apply to the chosen kind.
-
     """
     data: dict[str, Any] = config.model_dump(exclude_none=True)
     if data["kind"] == "cloud":
