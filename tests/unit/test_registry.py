@@ -10,13 +10,14 @@ from typing import Any
 import pytest
 
 from intercede import (
-    BackendConfig,
+    BatchSSHConfig,
+    CloudConfig,
     ConfigurationError,
     JobBackend,
     RegistryError,
     registry,
 )
-from intercede._backends.config import CloudSettings, FakeSettings
+from intercede._backends.config import FakeSettings
 from intercede.registry import _build, _load
 
 DUMMIES = "tests.unit._registry_dummies"
@@ -68,7 +69,7 @@ class TestBuilds:
 
     @pytest.mark.parametrize(
         "config",
-        [CLOUD, BackendConfig.model_validate(CLOUD)],
+        [CLOUD, CloudConfig(**CLOUD)],
         ids=["mapping", "object"],
     )
     def test_a_single_class_backend_gets_its_settings(
@@ -77,13 +78,13 @@ class TestBuilds:
         monkeypatch.setitem(registry._BACKENDS, "cloud", f"{DUMMIES}:DummyBackend")
         built: Any = registry.get_backend(config)
         assert type(built).__name__ == "DummyBackend"
-        assert isinstance(built.settings, CloudSettings)
+        assert isinstance(built.settings, CloudConfig)
 
     def test_a_batch_backend_is_composed_of_its_parts(self, composed: None):
         built: Any = registry.get_backend({**SSH_SLURM, "queue": "short"})
         assert type(built).__name__ == "DummyBatchBackend"
-        # The transport gets only its own settings; the scheduler the batch settings.
-        assert built.transport.settings.kind == "ssh"
+        # Transport and scheduler each get the whole batch configuration.
+        assert isinstance(built.transport.settings, BatchSSHConfig)
         assert built.transport.settings.host == "batch.example.org"
         assert built.scheduler.settings.queue == "short"
 

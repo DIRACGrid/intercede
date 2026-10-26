@@ -1,157 +1,351 @@
 """Backend configuration: how a consumer says which backend it wants.
 
-One flat model describes every backend. ``kind`` picks the backend; a ``batch``
-backend also picks a ``transport`` and a ``scheduler``. Only the fields that
-apply to that choice may be set, and the model is checked when it is built, so
-a mistake is reported here rather than at the first submit.
+There is one model per kind of backend, and ``BackendConfig`` is any of them,
+chosen by ``kind`` (and, for ``batch``, by ``transport``). Each model has
+exactly the fields of its backend, so a field that does not apply is refused
+when the configuration is read, not ignored or discovered at the first submit.
+
+A consumer can build a model directly, or pass the same data as a mapping, such
+as a parsed TOML table, to ``validate_config`` or ``registry.get_backend``::
+
+    kind = "batch"
+    transport = "ssh"
+    scheduler = "slurm"
+    host = "batch.example.org"
+    user = "dirac"
+    known_hosts = "batch.example.org ssh-ed25519 AAAA..."
 
 Configuration describes the resource and is never secret: keys, passwords,
-tokens and proxies come from the credential provider at run time.
-The kinds are a closed set: they list what interCEde ships.
+tokens and proxies come from the credential provider at run time. Error
+messages therefore never repeat the values they were given. The kinds are a
+closed set: they list what interCEde ships.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Literal, Self
+from typing import Annotated, Any, Literal, Self
 
-from pydantic import PositiveInt, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Discriminator,
+    PositiveInt,
+    Tag,
+    TypeAdapter,
+    ValidationError,
+    model_validator,
+)
 
-from intercede._backends.config import resolve
-from intercede.models import _Model
+from intercede.exceptions import ConfigurationError
 
-__all__ = ["BackendConfig"]
+__all__ = [
+    "ARCConfig",
+    "BackendConfig",
+    "BatchLocalConfig",
+    "BatchSSHConfig",
+    "CloudConfig",
+    "HTCondorCEConfig",
+    "validate_config",
+]
 
 
-class BackendConfig(_Model):
-    """Which backend to use, and how to reach it.
+class _Config(BaseModel):
+    """Base of every configuration model: immutable, strict, and silent about values."""
 
-    Examples, as TOML::
-
-        kind = "arc"
-        endpoint = "https://arc.example.org:443"
-        auth = ["token", "proxy"]
-
-        kind = "batch"
-        transport = "ssh"
-        scheduler = "slurm"
-        host = "batch.example.org"
-        user = "dirac"
-        known_hosts = "batch.example.org ssh-ed25519 AAAA..."
-
-        kind = "cloud"
-        endpoint = "https://cloud.example.org:5000"
-        driver = "openstack"
-        vm_image = "name:alma9-pilot"
-        vm_flavor = "name:m1.large"
-
-    Which fields apply:
-
-    ============================  ==========================================
-    ``kind``                      fields
-    ============================  ==========================================
-    ``arc``, ``htcondor-ce``      ``endpoint``, ``auth`` (``token``, ``proxy``)
-    ``cloud``                     ``endpoint``, ``driver``, ``vm_image``,
-                                  ``vm_flavor``, ``driver_options``,
-                                  ``vm_networks``, ``vm_ssh_key``
-    ``batch`` + ``local``         ``scheduler``
-    ``batch`` + ``ssh``           ``scheduler``, ``host``, ``user``,
-                                  ``known_hosts``, ``port``, ``jump_host``,
-                                  ``connect_timeout_s``, ``auth`` (one of
-                                  ``key``, ``password``, ``agent``)
-    all but ``cloud``             ``queue``, ``container_launcher``,
-                                  ``max_output_bytes``, ``max_output_files``,
-                                  ``transfer_timeout_s``
-    ============================  ==========================================
-    """
-
-    # What to use. ``kind`` is also what ``JobHandle.backend`` records.
-    # Three families: grid CEs that schedule by themselves
-    # ("arc", "htcondor-ce"), a cloud provider that boots a VM per job
-    # ("cloud"), and a batch system reached through a transport ("batch").
-    kind: Literal["arc", "htcondor-ce", "cloud", "batch"]
-    transport: Literal["local", "ssh"] | None = None
-    scheduler: Literal["slurm", "htcondor", "direct"] | None = None
-
-    # Where it is.
-    # A CE or cloud API: "https://arc.example.org:443", "ce.example.org:9619"
-    endpoint: str | None = None
-    host: str | None = None  # an SSH host
-    port: PositiveInt | None = None
-    user: str | None = None
-    known_hosts: str | None = None  # expected host keys; verification is not optional
-    jump_host: str | None = None  # "[user@]host[:port]"
-    connect_timeout_s: PositiveInt | None = None
-
-    # Which VM a cloud boots. The cloud's API keys come from the credential
-    # provider, so driver_options holds only non-secret driver arguments.
-    driver: str | None = (
-        None  # the driver library's name for the cloud, e.g. "openstack"
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        # A value given by mistake may be a secret: never repeat it in an error.
+        hide_input_in_errors=True,
+        use_attribute_docstrings=True,
     )
-    driver_options: Mapping[str, str] | None = None
-    vm_image: str | None = None  # an image ID, or "name:<image name>"
-    vm_flavor: str | None = None  # a flavor ID, or "name:<flavor name>"
-    vm_networks: Sequence[str] | None = None
-    vm_ssh_key: str | None = None  # the NAME of a key pair known to the cloud
 
-    # How to authenticate: which credentials the provider must supply, never
-    # the credentials themselves. Defaults to a token for a CE, a key for SSH.
-    auth: frozenset[str] | None = None
 
-    # How to run jobs there.
-    queue: str | None = None  # used when the spec does not name one
-    # An argv template wrapping the executable in a container, e.g.
-    # ["apptainer", "exec", "--bind", "/cvmfs", "{image}"].
+class _QueueConfig(_Config):
+    """What every backend that queues jobs on a resource shares."""
+
+    queue: str | None = None
+    """The queue a job goes to when its specification names none."""
+
     container_launcher: Sequence[str] | None = None
+    """An argv template that runs the executable in a container image, with an
+    ``{image}`` placeholder, e.g. ``["apptainer", "exec", "--bind", "/cvmfs", "{image}"]``."""
 
-    # Deployment policy for output collection; defaults apply when unset.
-    max_output_bytes: PositiveInt | None = None
-    max_output_files: PositiveInt | None = None
-    transfer_timeout_s: PositiveInt | None = None
+    max_output_bytes: PositiveInt = 10 * 2**30
+    """Collection of a job's output stops beyond this many bytes."""
+
+    max_output_files: PositiveInt = 10_000
+    """Collection of a job's output stops beyond this many files."""
+
+    transfer_timeout_s: PositiveInt = 3600
+    """How long collecting one job's output may take, in seconds."""
 
     @model_validator(mode="after")
-    def _fits_the_backend(self) -> Self:
-        try:
-            resolve(self)
-        except ValidationError as exc:
-            raise ValueError(_describe(self, exc)) from None
+    def _launcher_names_the_image(self) -> Self:
+        launcher = self.container_launcher
+        if launcher is not None and not any("{image}" in arg for arg in launcher):
+            raise ValueError("container_launcher must contain an '{image}' placeholder")
         return self
 
 
-def _describe(config: BackendConfig, exc: ValidationError) -> str:
-    """Report problems by the flat field names the consumer wrote.
+# -- grid CEs that schedule by themselves -------------------------------------
+
+
+class ARCConfig(_QueueConfig):
+    """An ARC CE."""
+
+    kind: Literal["arc"]
+    """Selects this model."""
+
+    endpoint: str
+    """The CE's REST endpoint, e.g. ``"https://arc.example.org:443/arex"``."""
+
+    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
+    """Which credentials the provider must supply, all of them together: a token
+    for the channel, a proxy for delegation, or both."""
+
+    @model_validator(mode="after")
+    def _auth_not_empty(self) -> Self:
+        if not self.auth:
+            raise ValueError("auth must name at least one of 'token', 'proxy'")
+        return self
+
+
+class HTCondorCEConfig(_QueueConfig):
+    """An HTCondor-CE."""
+
+    kind: Literal["htcondor-ce"]
+    """Selects this model."""
+
+    endpoint: str
+    """The CE's collector, as ``"host"`` or ``"host:port"``, e.g. ``"ce.example.org:9619"``."""
+
+    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
+    """Which credentials the provider must supply. The token authenticates the
+    channel; ``"proxy"`` adds an X.509 proxy for sites that account on VOMS attributes."""
+
+    @model_validator(mode="after")
+    def _token_required(self) -> Self:
+        if "token" not in self.auth:
+            raise ValueError(
+                "an HTCondor-CE authenticates with a token; auth must include 'token'"
+            )
+        return self
+
+
+# -- a cloud provider that boots one VM per job --------------------------------
+
+_SECRET_NAMES = ("secret", "password", "token", "passphrase")
+_SECRET_EXACT = ("key", "api_key", "access_key", "private_key")
+
+
+class CloudConfig(_Config):
+    """A cloud provider that boots one VM per job.
+
+    There is no queue and no filesystem to collect from afterwards, so the
+    queue, output limits and container launcher of the other kinds do not apply.
+    """
+
+    kind: Literal["cloud"]
+    """Selects this model."""
+
+    endpoint: str
+    """The cloud's API endpoint, and its identity in job handles."""
+
+    driver: str
+    """The driver library's name for this cloud, e.g. ``"openstack"``."""
+
+    driver_options: Mapping[str, str] = {}
+    """Extra, non-secret arguments for the driver, e.g. ``{"ex_tenant_name": "dirac"}``.
+    The cloud's API keys come from the credential provider, never from here."""
+
+    vm_image: str
+    """An image ID, or ``"name:<image name>"``."""
+
+    vm_flavor: str
+    """A flavor ID, or ``"name:<flavor name>"``."""
+
+    vm_networks: Sequence[str] = ()
+    """The networks to attach the VM to."""
+
+    vm_ssh_key: str | None = None
+    """The name of a key pair known to the cloud, not the key itself."""
+
+    @model_validator(mode="after")
+    def _no_secret_driver_options(self) -> Self:
+        secret = sorted(
+            name
+            for name in self.driver_options
+            if name.lower() in _SECRET_EXACT
+            or any(word in name.lower() for word in _SECRET_NAMES)
+        )
+        if secret:
+            raise ValueError(
+                f"driver_options must not hold secrets {secret}; "
+                "they come from the credential provider"
+            )
+        return self
+
+
+# -- a batch system reached through a transport --------------------------------
+
+
+class _BatchConfig(_QueueConfig):
+    kind: Literal["batch"]
+    """Selects a batch system; ``transport`` then selects the model."""
+
+    scheduler: Literal["slurm", "htcondor", "direct"]
+    """The batch system on the resource; ``"direct"`` runs jobs without one."""
+
+
+class BatchLocalConfig(_BatchConfig):
+    """A batch system on this host."""
+
+    transport: Literal["local"]
+    """Run the batch system's commands on this host."""
+
+
+class BatchSSHConfig(_BatchConfig):
+    """A batch system on a remote host, reached over SSH."""
+
+    transport: Literal["ssh"]
+    """Run the batch system's commands on ``host``, over SSH."""
+
+    host: str
+    """The host to log in to."""
+
+    port: PositiveInt = 22
+    """The SSH port on ``host``."""
+
+    user: str
+    """The account to log in as."""
+
+    known_hosts: str
+    """The host keys to expect, in ``known_hosts`` format. Verification is not optional."""
+
+    auth: Literal["key", "password", "agent"] = "key"
+    """How to log in: a key or a password from the credential provider, or an SSH agent."""
+
+    jump_host: str | None = None
+    """A host to connect through, as ``"[user@]host[:port]"``."""
+
+    connect_timeout_s: PositiveInt = 30
+    """How long connecting may take, in seconds."""
+
+    @model_validator(mode="after")
+    def _known_hosts_not_empty(self) -> Self:
+        if not self.known_hosts.strip():
+            raise ValueError("known_hosts must hold the expected host keys")
+        return self
+
+
+def _choice(value: Any) -> str | None:
+    """Return which model a configuration is for: its ``kind``, and for ``batch`` its transport."""
+    if isinstance(value, Mapping):
+        kind, transport = value.get("kind"), value.get("transport")
+    else:
+        kind, transport = (
+            getattr(value, "kind", None),
+            getattr(value, "transport", None),
+        )
+    if not isinstance(kind, str):
+        return None
+    return f"batch+{transport}" if kind == "batch" else kind
+
+
+_MODELS: dict[str, type[_Config]] = {
+    "arc": ARCConfig,
+    "htcondor-ce": HTCondorCEConfig,
+    "cloud": CloudConfig,
+    "batch+local": BatchLocalConfig,
+    "batch+ssh": BatchSSHConfig,
+}
+
+BackendConfig = Annotated[
+    Annotated[ARCConfig, Tag("arc")]
+    | Annotated[HTCondorCEConfig, Tag("htcondor-ce")]
+    | Annotated[CloudConfig, Tag("cloud")]
+    | Annotated[BatchLocalConfig, Tag("batch+local")]
+    | Annotated[BatchSSHConfig, Tag("batch+ssh")],
+    Discriminator(_choice),
+]
+"""The configuration of any backend: one of the models above, chosen by ``kind``."""
+
+_ADAPTER: TypeAdapter[BackendConfig] = TypeAdapter(BackendConfig)
+
+
+def validate_config(config: BackendConfig | Mapping[str, Any]) -> BackendConfig:
+    """Check a configuration and return the model of the backend it describes.
+
+    A model is checked again, so one changed with ``model_copy``, which does not
+    validate, cannot reach a backend with fields that do not apply.
 
     Args:
-        config: The configuration that was refused.
-        exc: What validating its resolved settings raised.
+        config: A configuration model, or the same data as a mapping, for
+            example a parsed TOML table.
+
+    Returns:
+        The model of the backend ``config`` describes.
+
+    Raises:
+        ConfigurationError: The configuration is invalid. The message names
+            every problem by field, and never repeats a value it was given.
+    """
+    # Only what was set: defaults of another kind's fields are not the user's mistake.
+    data = (
+        config.model_dump(exclude_unset=True)
+        if isinstance(config, BaseModel)
+        else config
+    )
+    try:
+        return _ADAPTER.validate_python(data)
+    except ValidationError as exc:
+        raise ConfigurationError(_describe(data, exc)) from None
+
+
+def _describe(data: Any, exc: ValidationError) -> str:
+    """Report every problem by the field the consumer wrote, without its value.
+
+    Args:
+        data: The configuration that was refused.
+        exc: What validating it raised.
 
     Returns:
         One line per problem, joined with "; ", such as
         "host: required for kind='batch' with transport='ssh'".
     """
-    fields = set(BackendConfig.model_fields)
-    lines = []
+    choice = _choice(data)
+    model = _MODELS.get(choice or "")
+    where = (
+        "kind='batch' with transport={!r}".format(choice.removeprefix("batch+"))
+        if choice and choice.startswith("batch+")
+        else f"kind={choice!r}"
+    )
+    problems = []
+    unknown = []
     for error in exc.errors():
-        named = [part for part in error["loc"] if part in fields]
-        prefix = f"{named[-1]}: " if named else ""
-        message = error["msg"].removeprefix("Value error, ")
-        if error["type"] == "extra_forbidden":
-            message = f"does not apply to {_choice(config)}"
-        elif error["type"] in ("missing", "union_tag_not_found"):
-            message = f"required for {_choice(config)}"
-        lines.append(prefix + message)
-    return "; ".join(lines)
+        fields = [part for part in error["loc"] if isinstance(part, str)]
+        field = fields[-1] if fields and fields[-1] not in _MODELS else None
+        if error["type"] in ("union_tag_not_found", "union_tag_invalid"):
+            problems.append(_unknown_kind(data))
+        elif error["type"] == "extra_forbidden" and field is not None:
+            unknown.append(field)
+        elif error["type"] == "missing":
+            problems.append(f"{field}: required for {where}")
+        else:
+            message = error["msg"].removeprefix("Value error, ")
+            problems.append(f"{field}: {message}" if field else message)
+    if unknown and model is not None:
+        expected = ", ".join(name for name in model.model_fields if name != "kind")
+        problems.insert(
+            0, f"{', '.join(unknown)}: not for {where} (expected: {expected})"
+        )
+    return "; ".join(problems)
 
 
-def _choice(config: BackendConfig) -> str:
-    """Name the backend a configuration chose, for an error message.
-
-    Args:
-        config: The configuration.
-
-    Returns:
-        For example "kind='arc'", or "kind='batch' with transport='ssh'".
-    """
-    if config.kind != "batch":
-        return f"kind={config.kind!r}"
-    return f"kind='batch' with transport={config.transport!r}"
+def _unknown_kind(data: Any) -> str:
+    kinds = sorted({choice.split("+")[0] for choice in _MODELS})
+    if isinstance(data, Mapping) and data.get("kind") == "batch":
+        return "transport: must be one of 'local', 'ssh'"
+    return f"kind: must be one of {', '.join(map(repr, kinds))}"

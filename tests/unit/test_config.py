@@ -1,22 +1,31 @@
-"""Backend configuration: one flat model, checked against the backend it names."""
+"""Backend configuration, through the public API: one model per kind of backend."""
 
 from __future__ import annotations
 
 from typing import Any
 
 import pytest
-from pydantic import ValidationError
 
-from intercede import BackendConfig
-from intercede._backends.config import (
-    ARCSettings,
-    BatchSettings,
-    HTCondorCESettings,
-    LocalTransportSettings,
-    SSHTransportSettings,
-    resolve,
+from intercede import (
+    ARCConfig,
+    BatchLocalConfig,
+    BatchSSHConfig,
+    CloudConfig,
+    ConfigurationError,
+    HTCondorCEConfig,
+    validate_config,
 )
 
+ARC: dict[str, Any] = {"kind": "arc", "endpoint": "https://arc.example.org:443"}
+CE: dict[str, Any] = {"kind": "htcondor-ce", "endpoint": "ce.example.org:9619"}
+CLOUD: dict[str, Any] = {
+    "kind": "cloud",
+    "endpoint": "https://cloud.example.org:5000",
+    "driver": "openstack",
+    "vm_image": "name:alma9-pilot",
+    "vm_flavor": "name:m1.large",
+}
+LOCAL: dict[str, Any] = {"kind": "batch", "transport": "local", "scheduler": "slurm"}
 SSH: dict[str, Any] = {
     "kind": "batch",
     "transport": "ssh",
@@ -28,123 +37,143 @@ SSH: dict[str, Any] = {
 
 
 def rejected(**data: Any) -> str:
-    """Return the error message for configuration that must be refused."""
-    with pytest.raises(ValidationError) as exc_info:
-        BackendConfig.model_validate(data)
+    """Return the message for a configuration that must be refused."""
+    with pytest.raises(ConfigurationError) as exc_info:
+        validate_config(data)
     return str(exc_info.value)
 
 
-class TestResolve:
-    """The flat model becomes the settings of exactly one backend."""
-
-    def test_arc(self):
-        settings = resolve(
-            BackendConfig(kind="arc", endpoint="https://arc.example.org:443")
-        )
-        assert isinstance(settings, ARCSettings)
-        assert settings.auth == {"token"}
-
-    def test_htcondor_ce_with_proxy(self):
-        config = BackendConfig(
-            kind="htcondor-ce", endpoint="ce:9619", auth=frozenset({"token", "proxy"})
-        )
-        settings = resolve(config)
-        assert isinstance(settings, HTCondorCESettings)
-        assert settings.auth == {"token", "proxy"}
-
-    def test_batch_over_ssh(self):
-        settings = resolve(BackendConfig.model_validate(SSH))
-        assert isinstance(settings, BatchSettings)
-        assert settings.scheduler == "slurm"
-        assert isinstance(settings.transport, SSHTransportSettings)
-        assert settings.transport.host == "batch.example.org"
-        assert settings.transport.port == 22
-        assert settings.transport.auth == "key"
-
-    def test_batch_on_this_host(self):
-        settings = resolve(
-            BackendConfig(kind="batch", transport="local", scheduler="direct")
-        )
-        assert isinstance(settings, BatchSettings)
-        assert isinstance(settings.transport, LocalTransportSettings)
-
-    def test_ssh_auth_mode(self):
-        settings = resolve(BackendConfig.model_validate({**SSH, "auth": ["agent"]}))
-        assert isinstance(settings, BatchSettings)
-        assert isinstance(settings.transport, SSHTransportSettings)
-        assert settings.transport.auth == "agent"
-
-    def test_limits(self):
-        settings = resolve(
-            BackendConfig(kind="arc", endpoint="https://a:443", max_output_files=500)
-        )
-        assert settings.limits.max_output_files == 500
-        assert settings.limits.transfer_timeout_s == 3600
+@pytest.mark.parametrize(
+    ("data", "model"),
+    [
+        (ARC, ARCConfig),
+        (CE, HTCondorCEConfig),
+        (CLOUD, CloudConfig),
+        (LOCAL, BatchLocalConfig),
+        (SSH, BatchSSHConfig),
+    ],
+    ids=["arc", "htcondor-ce", "cloud", "batch-local", "batch-ssh"],
+)
+def test_kind_and_transport_choose_the_model(data: dict[str, Any], model: type):
+    assert type(validate_config(data)) is model
 
 
-class TestRejected:
-    def test_unknown_kind(self):
-        assert "kind" in rejected(kind="lsf")
+def test_defaults_are_filled_in():
+    ssh = validate_config(SSH)
+    assert isinstance(ssh, BatchSSHConfig)
+    assert (ssh.port, ssh.auth, ssh.connect_timeout_s) == (22, "key", 30)
+    assert ssh.transfer_timeout_s == 3600
+    ce = validate_config(CE)
+    assert isinstance(ce, HTCondorCEConfig) and ce.auth == {"token"}
 
-    def test_typo_is_not_silently_ignored(self):
-        assert "endpont" in rejected(kind="arc", endpoint="https://a:443", endpont="x")
+
+def test_a_model_passes_through_unchanged():
+    model = HTCondorCEConfig(kind="htcondor-ce", endpoint="ce:9619", queue="short")
+    assert validate_config(model) == model
+
+
+class TestRefused:
+    @pytest.mark.parametrize(
+        ("data", "message"),
+        [
+            (
+                {"kind": "lsf"},
+                "kind: must be one of 'arc', 'batch', 'cloud', 'htcondor-ce'",
+            ),
+            (
+                {**LOCAL, "transport": "pigeon"},
+                "transport: must be one of 'local', 'ssh'",
+            ),
+            ({"kind": "batch", "scheduler": "slurm"}, "transport: must be one of"),
+        ],
+        ids=["kind", "transport", "no-transport"],
+    )
+    def test_an_unknown_choice(self, data: dict[str, Any], message: str):
+        assert message in rejected(**data)
 
     @pytest.mark.parametrize(
-        ("data", "field"),
+        ("data", "field", "where"),
         [
-            ({"kind": "arc", "endpoint": "https://a:443", "host": "h"}, "host"),
+            ({**ARC, "host": "h"}, "host", "kind='arc'"),
+            ({**CLOUD, "queue": "short"}, "queue", "kind='cloud'"),
             (
-                {"kind": "arc", "endpoint": "https://a:443", "scheduler": "slurm"},
-                "scheduler",
+                {**LOCAL, "known_hosts": "h k"},
+                "known_hosts",
+                "kind='batch' with transport='local'",
             ),
-            ({**SSH, "endpoint": "https://a:443"}, "endpoint"),
             (
-                {
-                    "kind": "batch",
-                    "transport": "local",
-                    "scheduler": "slurm",
-                    "host": "h",
-                },
-                "host",
+                {**SSH, "endpoint": "https://a"},
+                "endpoint",
+                "kind='batch' with transport='ssh'",
             ),
         ],
     )
-    def test_fields_that_do_not_apply_are_refused(
-        self, data: dict[str, Any], field: str
+    def test_a_field_of_another_kind(
+        self, data: dict[str, Any], field: str, where: str
     ):
-        assert f"{field}: does not apply to" in rejected(**data)
+        assert f"{field}: not for {where} (expected: " in rejected(**data)
+
+    def test_every_missing_field_is_named_at_once(self):
+        message = rejected(kind="batch", transport="ssh", scheduler="slurm")
+        for field in ("host", "user", "known_hosts"):
+            assert f"{field}: required for kind='batch' with transport='ssh'" in message
 
     @pytest.mark.parametrize(
-        ("data", "field"),
+        ("data", "message"),
         [
-            ({"kind": "arc"}, "endpoint"),
-            ({"kind": "batch", "scheduler": "slurm"}, "transport"),
-            ({"kind": "batch", "transport": "local"}, "scheduler"),
-            ({**SSH, "user": None}, "user"),
-            ({**SSH, "known_hosts": None}, "known_hosts"),
+            ({**ARC, "auth": []}, "auth must name at least one"),
+            ({**CE, "auth": ["proxy"]}, "must include 'token'"),
+            ({**ARC, "auth": ["key"]}, "auth"),
+            ({**SSH, "auth": "token"}, "auth"),
+            (
+                {**SSH, "known_hosts": "\n\t "},
+                "known_hosts must hold the expected host keys",
+            ),
+            (
+                {**LOCAL, "container_launcher": ["apptainer", "exec"]},
+                "'{image}' placeholder",
+            ),
+            ({**CLOUD, "driver_options": {"OS_PASSWORD": "x"}}, "credential provider"),
+            ({**LOCAL, "max_output_files": 0}, "max_output_files"),
+        ],
+        ids=[
+            "arc-no-auth",
+            "htcondor-ce-no-token",
+            "ce-ssh-auth",
+            "ssh-ce-auth",
+            "no-host-keys",
+            "launcher-no-image",
+            "secret-driver-option",
+            "zero-limit",
         ],
     )
-    def test_missing_fields_are_named(self, data: dict[str, Any], field: str):
-        assert f"{field}: required for" in rejected(**data)
+    def test_a_rule_of_the_kind(self, data: dict[str, Any], message: str):
+        assert message in rejected(**data)
 
-    def test_ssh_requires_host_key_verification(self):
-        assert "known_hosts" in rejected(**{**SSH, "known_hosts": "  "})
 
-    @pytest.mark.parametrize("auth", [["token"], ["key", "password"]])
-    def test_ssh_authenticates_one_supported_way(self, auth: list[str]):
-        assert "auth" in rejected(**{**SSH, "auth": auth})
+class TestNeverRepeatsAValue:
+    """A value given by mistake may be a secret, so no error message repeats one."""
 
-    def test_htcondor_ce_needs_a_token(self):
-        assert "token" in rejected(
-            kind="htcondor-ce", endpoint="ce:9619", auth=["proxy"]
-        )
+    def test_an_unknown_field(self):
+        message = rejected(**SSH, password="toto4")  # noqa: S106  (fake)
+        assert "toto4" not in message
+        assert "password: not for kind='batch' with transport='ssh'" in message
 
-    def test_ce_auth_is_token_or_proxy(self):
-        assert "auth" in rejected(kind="arc", endpoint="https://a:443", auth=["key"])
+    def test_a_wrong_value(self):
+        assert "toto4" not in rejected(**SSH, port="toto4")
 
-    def test_container_launcher_must_name_the_image(self):
-        base = {"kind": "batch", "transport": "local", "scheduler": "slurm"}
-        assert "{image}" in rejected(**base, container_launcher=["apptainer", "exec"])
-        BackendConfig.model_validate(
-            {**base, "container_launcher": ["apptainer", "exec", "{image}"]}
-        )
+    def test_building_a_model_directly(self):
+        with pytest.raises(ValueError) as exc_info:
+            BatchSSHConfig(**SSH, password="toto4")  # type: ignore[call-arg]  # noqa: S106
+        assert "toto4" not in str(exc_info.value)
+
+
+def test_a_copied_model_is_checked_again():
+    # model_copy does not validate: a field of the old transport must not slip through.
+    local = validate_config(SSH).model_copy(update={"transport": "local"})
+    with pytest.raises(ConfigurationError) as exc_info:
+        validate_config(local)
+    assert (
+        "host, user, known_hosts: not for kind='batch' with transport='local'"
+        in str(exc_info.value)
+    )

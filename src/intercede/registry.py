@@ -6,7 +6,7 @@ Each entry names its class as ``"module:Class"`` and is imported only when a
 configuration asks for it, so installing interCEde never imports every backend.
 
 Every registered class provides a ``from_settings`` classmethod, which is how
-the registry builds it from the validated settings of ``_backends.config``.
+the registry builds it from a validated configuration model.
 What it builds is checked against the relevant protocol before it is returned,
 so a broken entry fails here, with a clear error, and not at the first call.
 """
@@ -18,17 +18,18 @@ from functools import cache
 from importlib import import_module
 from typing import Any, get_args
 
-from pydantic import ValidationError
-
 from intercede._backends.batch.protocols import Scheduler, Transport
-from intercede._backends.config import (
-    BackendSettings,
-    BatchSettings,
-    FakeSettings,
-    resolve,
+from intercede._backends.config import FakeSettings
+from intercede.config import (
+    _MODELS as _CONFIG_MODELS,
 )
-from intercede.config import BackendConfig
-from intercede.exceptions import ConfigurationError, RegistryError
+from intercede.config import (
+    BackendConfig,
+    BatchLocalConfig,
+    BatchSSHConfig,
+    validate_config,
+)
+from intercede.exceptions import RegistryError
 from intercede.protocols import JobBackend
 
 __all__ = ["available", "get_backend"]
@@ -70,12 +71,7 @@ def get_backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
         RegistryError: The configuration is valid, but this version of
             interCEde does not provide what it asks for.
     """
-    if not isinstance(config, BackendConfig):
-        try:
-            config = BackendConfig.model_validate(config)
-        except ValidationError as exc:
-            raise ConfigurationError(str(exc)) from exc
-    return _build(resolve(config))
+    return _build(validate_config(config))
 
 
 def available() -> dict[str, tuple[str, ...]]:
@@ -85,10 +81,18 @@ def available() -> dict[str, tuple[str, ...]]:
         The names per group, sorted, for tooling. For example
         ``{"backend": ("arc", "batch"), "transport": ("ssh",), ...}``.
     """
+    batch = (BatchLocalConfig, BatchSSHConfig)
     public = {
-        "backend": _choices(BackendConfig.model_fields["kind"].annotation),
-        "transport": _choices(BackendConfig.model_fields["transport"].annotation),
-        "scheduler": _choices(BackendConfig.model_fields["scheduler"].annotation),
+        "backend": set().union(
+            *(
+                _choices(model.model_fields["kind"].annotation)
+                for model in _CONFIG_MODELS.values()
+            )
+        ),
+        "transport": set().union(
+            *(_choices(model.model_fields["transport"].annotation) for model in batch)
+        ),
+        "scheduler": _choices(BatchLocalConfig.model_fields["scheduler"].annotation),
     }
     result = {}
     for group, table in _GROUPS.items():
@@ -119,40 +123,40 @@ def _choices(annotation: Any) -> set[str]:
     return values
 
 
-def _build(settings: BackendSettings | FakeSettings) -> JobBackend:
-    """Build a backend from validated settings. Internal: the test suites call it directly.
+def _build(config: BackendConfig | FakeSettings) -> JobBackend:
+    """Build a backend from a validated configuration. Internal: the test suites call it directly.
 
     Args:
-        settings: The resolved settings of one backend, or of the fake.
+        config: The validated configuration of one backend, or the fake's settings.
 
     Returns:
         The backend, not yet opened. A ``batch`` backend is composed of the
-        transport and the scheduler its settings name.
+        transport and the scheduler its configuration names; both receive the
+        whole configuration.
 
     Raises:
-        RegistryError: Something the settings name is not available, or what
-            was built does not satisfy its protocol.
+        RegistryError: Something the configuration names is not available, or
+            what was built does not satisfy its protocol.
     """
-    if not isinstance(settings, BatchSettings):
-        built = _load("backend", settings.kind).from_settings(settings)
-        result: JobBackend = _checked("backend", settings.kind, built, JobBackend)
+    if not isinstance(config, BatchLocalConfig | BatchSSHConfig):
+        built = _load("backend", config.kind).from_settings(config)
+        result: JobBackend = _checked("backend", config.kind, built, JobBackend)
         return result
 
-    transport_kind = settings.transport.kind
     transport: Transport = _checked(
         "transport",
-        transport_kind,
-        _load("transport", transport_kind).from_settings(settings.transport),
+        config.transport,
+        _load("transport", config.transport).from_settings(config),
         Transport,
     )
     scheduler: Scheduler = _checked(
         "scheduler",
-        settings.scheduler,
-        _load("scheduler", settings.scheduler).from_settings(settings),
+        config.scheduler,
+        _load("scheduler", config.scheduler).from_settings(config),
         Scheduler,
     )
     built = _load("backend", "batch").from_settings(
-        settings, transport=transport, scheduler=scheduler
+        config, transport=transport, scheduler=scheduler
     )
     composed: JobBackend = _checked("backend", "batch", built, JobBackend)
     return composed
