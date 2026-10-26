@@ -147,6 +147,7 @@ intercede = { path = ".", editable = true }
 mkdocs = "<2"
 mkdocs-material = "*"
 mkdocstrings = { version = "*", extras = ["python"] }
+griffe-pydantic = "*"
 [tool.pixi.feature.docs.tasks]
 docs = { cmd = "mkdocs build --strict", description = "Build the documentation" }
 
