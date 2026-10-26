@@ -12,7 +12,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from intercede._backends.config import FakeSettings
+from intercede._backends.config import FakeConfig
 from intercede.exceptions import (
     InterCEdeError,
     ResourceUnavailableError,
@@ -94,7 +94,7 @@ class FakeBackend:
         self._closed = False
 
     @classmethod
-    def from_settings(cls, settings: FakeSettings) -> Self:
+    def from_settings(cls, settings: FakeConfig) -> Self:
         """Build the fake from its settings; how the registry constructs it.
 
         Args:
@@ -379,4 +379,4 @@ _output: type[OutputRetriever] = FakeBackend
 _kill: type[Killable] = FakeBackend
 _purge: type[Purgeable] = FakeBackend
 _diag: type[Diagnosable] = FakeBackend
-_built_by_registry: Callable[[FakeSettings], JobBackend] = FakeBackend.from_settings
+_built_by_registry: Callable[[FakeConfig], JobBackend] = FakeBackend.from_settings

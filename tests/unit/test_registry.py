@@ -17,7 +17,7 @@ from intercede import (
     RegistryError,
     registry,
 )
-from intercede._backends.config import FakeSettings
+from intercede._backends.config import FakeConfig
 from intercede.registry import _build, _load
 
 DUMMIES = "tests.unit._registry_dummies"
@@ -63,7 +63,7 @@ def composed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 class TestBuilds:
     async def test_the_fake_for_the_test_suites(self):
-        async with _build(FakeSettings(resource="fake://test")) as backend:
+        async with _build(FakeConfig(resource="fake://test")) as backend:
             assert isinstance(backend, JobBackend)
             assert backend.resource == "fake://test"
 
