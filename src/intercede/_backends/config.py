@@ -11,7 +11,7 @@ from typing import Literal
 from intercede.models import _Model
 
 
-class FakeSettings(_Model):
+class FakeConfig(_Model):
     """The in-memory fake, for the test suites."""
 
     kind: Literal["fake"] = "fake"

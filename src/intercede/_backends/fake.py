@@ -12,7 +12,7 @@ from pathlib import Path
 from types import TracebackType
 from typing import Self
 
-from intercede._backends.config import FakeSettings
+from intercede._backends.config import FakeConfig
 from intercede.auth.protocols import CredentialProvider
 from intercede.exceptions import (
     InterCEdeError,
@@ -96,7 +96,7 @@ class FakeBackend:
 
     @classmethod
     def from_settings(
-        cls, settings: FakeSettings, credentials: CredentialProvider
+        cls, settings: FakeConfig, credentials: CredentialProvider
     ) -> Self:
         """Build the fake from its settings; how the registry constructs it.
 
@@ -384,6 +384,6 @@ _output: type[OutputRetriever] = FakeBackend
 _kill: type[Killable] = FakeBackend
 _purge: type[Purgeable] = FakeBackend
 _diag: type[Diagnosable] = FakeBackend
-_built_by_registry: Callable[[FakeSettings, CredentialProvider], JobBackend] = (
+_built_by_registry: Callable[[FakeConfig, CredentialProvider], JobBackend] = (
     FakeBackend.from_settings
 )

@@ -21,7 +21,7 @@ from importlib import import_module
 from typing import Any, get_args
 
 from intercede._backends.batch.protocols import Scheduler, Transport
-from intercede._backends.config import FakeSettings
+from intercede._backends.config import FakeConfig
 from intercede.auth.protocols import CredentialProvider
 from intercede.config import (
     _MODELS as _CONFIG_MODELS,
@@ -141,7 +141,7 @@ def _choices(annotation: Any) -> set[str]:
 
 
 def _build(
-    config: BackendConfig | FakeSettings, credentials: CredentialProvider
+    config: BackendConfig | FakeConfig, credentials: CredentialProvider
 ) -> JobBackend:
     """Build a backend from a validated configuration. Internal: the test suites call it directly.
 
