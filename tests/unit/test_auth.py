@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
@@ -44,6 +45,22 @@ def test_a_secret_never_shows(kind: type[Credential]):
         repr(StaticCredentials([credential])),
     ):
         assert SECRET not in shown
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: BearerToken(value="t", token=SECRET),
+        lambda: SSHPrivateKey(pem=b"k", passphrase=[SECRET]),
+        lambda: CredentialSet([{"value": SECRET}]),
+        lambda: StaticCredentials([{"value": SECRET}]),
+    ],
+    ids=["unknown-field", "wrong-type", "plain-data-in-set", "plain-data-in-provider"],
+)
+def test_a_mistake_never_repeats_the_secret(build: Callable[[], Any]):
+    with pytest.raises(ValidationError) as exc_info:
+        build()
+    assert SECRET not in str(exc_info.value)
 
 
 def test_expiry_must_have_a_timezone():

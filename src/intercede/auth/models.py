@@ -44,6 +44,10 @@ class Credential(_Model):
     Not used on its own: a provider returns one of the concrete kinds below.
     """
 
+    # Added to _Model's settings: a value given by mistake may be the secret
+    # itself, so no error message repeats one.
+    model_config = ConfigDict(hide_input_in_errors=True)
+
     # None means it never goes stale (SSH secrets). Must carry a timezone, so
     # it can be compared with the current time.
     expires_at: AwareDatetime | None = None
@@ -92,7 +96,7 @@ class CredentialSet(RootModel[tuple[AnyCredential, ...]]):
         CredentialSet([BearerToken(value=token), X509Proxy(pem=proxy)])
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
 
     root: tuple[AnyCredential, ...] = ()
 
