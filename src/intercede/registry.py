@@ -7,6 +7,8 @@ configuration asks for it, so installing interCEde never imports every backend.
 
 Every registered class provides a ``from_settings`` classmethod, which is how
 the registry builds it from a validated configuration model.
+The parts that authenticate (single-class backends and transports) also
+receive the consumer's credential provider; a scheduler only builds commands.
 What it builds is checked against the relevant protocol before it is returned,
 so a broken entry fails here, with a clear error, and not at the first call.
 """
@@ -20,6 +22,7 @@ from typing import Any, get_args
 
 from intercede._backends.batch.protocols import Scheduler, Transport
 from intercede._backends.config import FakeConfig
+from intercede.auth.protocols import CredentialProvider
 from intercede.config import (
     _MODELS as _CONFIG_MODELS,
 )
@@ -29,7 +32,7 @@ from intercede.config import (
     BatchSSHConfig,
     validate_config,
 )
-from intercede.exceptions import RegistryError
+from intercede.exceptions import ConfigurationError, RegistryError
 from intercede.protocols import JobBackend
 
 __all__ = ["available", "get_backend"]
@@ -53,25 +56,39 @@ _GROUPS: dict[str, dict[str, str]] = {
 }
 
 
-def get_backend(config: BackendConfig | Mapping[str, Any]) -> JobBackend:
+def get_backend(
+    config: BackendConfig | Mapping[str, Any], credentials: CredentialProvider
+) -> JobBackend:
     """Build the backend a configuration describes.
 
-    The backend is returned unopened: use it as ``async with registry.get_backend(config) as ce``.
-    Construction does no I/O, so building a backend for an unreachable resource succeeds.
+    The backend is returned unopened: use it as
+    ``async with registry.get_backend(config, credentials) as ce``. Construction
+    does no I/O and asks the provider for nothing, so building a backend for an
+    unreachable resource succeeds. The backend asks for credentials when it
+    first needs them, and again when they are about to expire.
 
     Args:
         config: A ``BackendConfig``, or the same data as a mapping, for example
             a parsed TOML table.
+        credentials: The consumer's provider. The consumer opens and closes it;
+            interCEde never does. One provider is normally shared by every
+            backend a task drives.
 
     Returns:
         The backend, not yet opened.
 
     Raises:
-        ConfigurationError: The configuration is invalid.
+        ConfigurationError: The configuration is invalid, or ``credentials``
+            is not a ``CredentialProvider``.
         RegistryError: The configuration is valid, but this version of
             interCEde does not provide what it asks for.
     """
-    return _build(validate_config(config))
+    validated = validate_config(config)
+    if not isinstance(credentials, CredentialProvider):
+        raise ConfigurationError(
+            f"credentials must be a CredentialProvider, not a {type(credentials).__name__}"
+        )
+    return _build(validated, credentials)
 
 
 def available() -> dict[str, tuple[str, ...]]:
@@ -123,11 +140,14 @@ def _choices(annotation: Any) -> set[str]:
     return values
 
 
-def _build(config: BackendConfig | FakeConfig) -> JobBackend:
+def _build(
+    config: BackendConfig | FakeConfig, credentials: CredentialProvider
+) -> JobBackend:
     """Build a backend from a validated configuration. Internal: the test suites call it directly.
 
     Args:
         config: The validated configuration of one backend, or the fake's settings.
+        credentials: The consumer's provider, for the parts that authenticate.
 
     Returns:
         The backend, not yet opened. A ``batch`` backend is composed of the
@@ -139,14 +159,14 @@ def _build(config: BackendConfig | FakeConfig) -> JobBackend:
             what was built does not satisfy its protocol.
     """
     if not isinstance(config, BatchLocalConfig | BatchSSHConfig):
-        built = _load("backend", config.kind).from_settings(config)
+        built = _load("backend", config.kind).from_settings(config, credentials)
         result: JobBackend = _checked("backend", config.kind, built, JobBackend)
         return result
 
     transport: Transport = _checked(
         "transport",
         config.transport,
-        _load("transport", config.transport).from_settings(config),
+        _load("transport", config.transport).from_settings(config, credentials),
         Transport,
     )
     scheduler: Scheduler = _checked(

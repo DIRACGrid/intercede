@@ -19,6 +19,14 @@ Anything else, including every name starting with `_`, is internal.
 
 ::: intercede.registry
 
+## Credentials
+
+::: intercede.auth.models
+
+::: intercede.auth.protocols
+
+::: intercede.auth.providers
+
 ## Exceptions
 
 ::: intercede.exceptions

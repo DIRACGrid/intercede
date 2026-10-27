@@ -19,10 +19,13 @@ class _Lifecycle:
 class DummyTransport(_Lifecycle):
     def __init__(self, settings: Any) -> None:
         self.settings = settings
+        self.credentials: Any = None
 
     @classmethod
-    def from_settings(cls, settings: Any) -> DummyTransport:
-        return cls(settings)
+    def from_settings(cls, settings: Any, credentials: Any) -> DummyTransport:
+        built = cls(settings)
+        built.credentials = credentials
+        return built
 
     async def run(self, argv: Any) -> Any: ...
 
@@ -74,10 +77,13 @@ class DummyBackend(_Lifecycle):
 
     def __init__(self, settings: Any) -> None:
         self.settings = settings
+        self.credentials: Any = None
 
     @classmethod
-    def from_settings(cls, settings: Any) -> DummyBackend:
-        return cls(settings)
+    def from_settings(cls, settings: Any, credentials: Any) -> DummyBackend:
+        built = cls(settings)
+        built.credentials = credentials
+        return built
 
     async def submit(self, spec: Any, copies: Any = 1) -> Any: ...
 

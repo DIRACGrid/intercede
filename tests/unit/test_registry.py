@@ -18,9 +18,11 @@ from intercede import (
     registry,
 )
 from intercede._backends.config import FakeConfig
+from intercede.auth import CredentialSet, StaticCredentials
 from intercede.registry import _build, _load
 
 DUMMIES = "tests.unit._registry_dummies"
+CREDENTIALS = StaticCredentials()
 
 CLOUD: dict[str, Any] = {
     "kind": "cloud",
@@ -63,7 +65,7 @@ def composed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 class TestBuilds:
     async def test_the_fake_for_the_test_suites(self):
-        async with _build(FakeConfig(resource="fake://test")) as backend:
+        async with _build(FakeConfig(resource="fake://test"), CREDENTIALS) as backend:
             assert isinstance(backend, JobBackend)
             assert backend.resource == "fake://test"
 
@@ -72,28 +74,56 @@ class TestBuilds:
         [CLOUD, CloudConfig(**CLOUD)],
         ids=["mapping", "object"],
     )
-    def test_a_single_class_backend_gets_its_settings(
+    def test_a_single_class_backend_gets_its_settings_and_provider(
         self, monkeypatch: pytest.MonkeyPatch, config: Any
     ):
         monkeypatch.setitem(registry._BACKENDS, "cloud", f"{DUMMIES}:DummyBackend")
-        built: Any = registry.get_backend(config)
+        provider = StaticCredentials()
+        built: Any = registry.get_backend(config, provider)
         assert type(built).__name__ == "DummyBackend"
         assert isinstance(built.settings, CloudConfig)
+        assert built.credentials is provider
 
     def test_a_batch_backend_is_composed_of_its_parts(self, composed: None):
-        built: Any = registry.get_backend({**SSH_SLURM, "queue": "short"})
+        provider = StaticCredentials()
+        built: Any = registry.get_backend({**SSH_SLURM, "queue": "short"}, provider)
         assert type(built).__name__ == "DummyBatchBackend"
-        # Transport and scheduler each get the whole batch configuration.
+        # Transport and scheduler each get the whole batch configuration; the
+        # transport, which authenticates, also gets the provider.
         assert isinstance(built.transport.settings, BatchSSHConfig)
         assert built.transport.settings.host == "batch.example.org"
+        assert built.transport.credentials is provider
         assert built.scheduler.settings.queue == "short"
+
+    async def test_building_asks_the_provider_nothing(
+        self, composed: None, monkeypatch: pytest.MonkeyPatch
+    ):
+        monkeypatch.setitem(registry._BACKENDS, "cloud", f"{DUMMIES}:DummyBackend")
+
+        class Watching(StaticCredentials):
+            asked = 0
+
+            async def get(self, requirements: Any) -> CredentialSet:
+                Watching.asked += 1
+                return await super().get(requirements)
+
+        registry.get_backend(SSH_SLURM, Watching())
+        registry.get_backend(CLOUD, Watching())
+        assert Watching.asked == 0  # construction does no I/O
 
 
 class TestRefused:
     def test_invalid_configuration_keeps_the_details(self):
         with pytest.raises(ConfigurationError) as exc_info:
-            registry.get_backend({"kind": "arc"})
+            registry.get_backend({"kind": "arc"}, CREDENTIALS)
         assert "endpoint: required for kind='arc'" in str(exc_info.value)
+
+    @pytest.mark.parametrize(
+        "credentials", [None, CredentialSet()], ids=["none", "set-not-provider"]
+    )
+    def test_credentials_must_be_a_provider(self, composed: None, credentials: Any):
+        with pytest.raises(ConfigurationError, match="must be a CredentialProvider"):
+            registry.get_backend(LOCAL_SLURM, credentials)
 
     @pytest.mark.parametrize(
         "config",
@@ -104,18 +134,18 @@ class TestRefused:
         with pytest.raises(
             RegistryError, match=f"backend '{config['kind']}' is not available"
         ):
-            registry.get_backend(config)
+            registry.get_backend(config, CREDENTIALS)
 
     def test_composed_part_not_shipped_yet(self):
         with pytest.raises(RegistryError, match="transport 'ssh' is not available"):
-            registry.get_backend(SSH_SLURM)
+            registry.get_backend(SSH_SLURM, CREDENTIALS)
 
     def test_an_entry_that_cannot_be_imported(
         self, composed: None, monkeypatch: pytest.MonkeyPatch
     ):
         monkeypatch.setitem(registry._TRANSPORTS, "ssh", "tests.unit.does_not_exist:X")
         with pytest.raises(RegistryError, match="cannot be imported") as exc_info:
-            registry.get_backend(SSH_SLURM)
+            registry.get_backend(SSH_SLURM, CREDENTIALS)
         assert isinstance(exc_info.value.__cause__, ImportError)
 
     @pytest.mark.parametrize(
@@ -138,7 +168,7 @@ class TestRefused:
             getattr(registry, table), name, f"{DUMMIES}:BuildsTheWrongThing"
         )
         with pytest.raises(RegistryError, match=f"which is not a {protocol}"):
-            registry.get_backend(LOCAL_SLURM)
+            registry.get_backend(LOCAL_SLURM, CREDENTIALS)
 
 
 class TestAvailable:
@@ -170,5 +200,5 @@ class TestLazyImports:
         monkeypatch.delitem(sys.modules, DUMMIES, raising=False)
         registry.available()
         assert DUMMIES not in sys.modules  # listing imports nothing
-        registry.get_backend(LOCAL_SLURM)
+        registry.get_backend(LOCAL_SLURM, CREDENTIALS)
         assert DUMMIES in sys.modules
