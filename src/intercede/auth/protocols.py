@@ -35,7 +35,6 @@ class CredentialProvider(Protocol):
             Exception: Anything raised here fails the whole operation: the
                 backend reports it as an ``AuthenticationError``, never as a
                 per-job outcome.
-
         """
         ...
 

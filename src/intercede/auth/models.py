@@ -134,7 +134,14 @@ class CredentialSet(RootModel[tuple[AnyCredential, ...]]):
         return self
 
     def get(self, kind: type[C]) -> C | None:
-        """Return the credential of ``kind``, or None if the set has none."""
+        """Return the credential of one kind.
+
+        Args:
+            kind: The credential class to look for, e.g. ``BearerToken``.
+
+        Returns:
+            The set's credential of ``kind``, or None if it has none.
+        """
         for credential in self.root:
             if isinstance(credential, kind):
                 return credential

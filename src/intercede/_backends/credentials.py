@@ -85,9 +85,17 @@ def is_stale(
 ) -> bool:
     """Tell whether ``credentials`` cannot serve ``requirements`` for ``margin`` more.
 
-    Stale when there are no credentials yet, when a required kind is missing,
-    or when a required credential expires within ``margin``. A credential that
-    never expires is never stale.
+    A credential that never expires is never stale.
+
+    Args:
+        credentials: The set the backend holds, or None before its first request.
+        requirements: What the backend needs for the operation about to run.
+        margin: How long the credentials must stay valid from now.
+        now: The current time; tests pass a fixed one.
+
+    Returns:
+        True when there are no credentials yet, when a required kind is
+        missing, or when a required credential expires within ``margin``.
     """
     if credentials is None:
         return True
@@ -114,11 +122,20 @@ async def refresh_if_stale(
 ) -> CredentialSet:
     """Return ``current`` while it is fresh, otherwise a new set from ``provider``.
 
+    Args:
+        current: The set the backend holds, or None before its first request.
+        requirements: What the backend needs for the operation about to run.
+        provider: The consumer's provider, asked only when ``current`` is stale.
+        margin: How long the credentials must stay valid from now.
+        now: The current time; tests pass a fixed one.
+
+    Returns:
+        The set to authenticate with: ``current``, or the provider's new set.
+
     Raises:
         AuthenticationError: The provider failed, left out a required kind, or
             returned a credential that has already expired. Always a failure of
             the whole operation, never a per-job outcome.
-
     """
     if not is_stale(current, requirements, margin=margin, now=now):
         assert current is not None  # is_stale() is True for None
