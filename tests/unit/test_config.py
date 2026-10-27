@@ -113,6 +113,12 @@ class TestRefused:
     ):
         assert f"{field}: not for {where} (expected: " in rejected(**data)
 
+    @pytest.mark.parametrize("data", [None, "arc", ["kind", "arc"]])
+    def test_something_that_is_not_a_configuration(self, data: Any):
+        # For example a config file read as text, or a missing table.
+        with pytest.raises(ConfigurationError, match="kind: must be one of"):
+            validate_config(data)
+
     def test_every_missing_field_is_named_at_once(self):
         message = rejected(kind="batch", transport="ssh", scheduler="slurm")
         for field in ("host", "user", "known_hosts"):
