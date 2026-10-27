@@ -120,11 +120,13 @@ class TestProviderFailures:
     """Every failure is a whole-operation AuthenticationError."""
 
     async def test_provider_raising_is_an_authentication_error(self):
-        provider = Recording(error=RuntimeError("token service down"))
-        with pytest.raises(AuthenticationError, match="token service down") as exc_info:
+        provider = Recording(error=RuntimeError("no token for s3cret-url"))
+        with pytest.raises(AuthenticationError) as exc_info:
             await refresh_if_stale(None, TOKEN_ONLY, provider, now=NOW)
         assert isinstance(exc_info.value.__cause__, RuntimeError)
-        assert "ce:9619" in str(exc_info.value)
+        message = str(exc_info.value)
+        assert "ce:9619" in message and "RuntimeError" in message
+        assert "s3cret" not in message  # the provider's text may hold a secret
 
     async def test_our_own_errors_pass_through_unchanged(self):
         error = InterCEdeError("x")

@@ -129,8 +129,11 @@ async def refresh_if_stale(
     except InterCEdeError:
         raise  # already typed, e.g. an AuthenticationError from the provider
     except Exception as exc:
+        # Only the type: the provider's message may hold a token or a secret URL.
+        # The exception itself stays available as __cause__.
         raise AuthenticationError(
-            f"the credential provider failed for {requirements.resource}: {exc}"
+            f"the credential provider failed for {requirements.resource} "
+            f"with {type(exc).__name__}"
         ) from exc
 
     if not isinstance(fresh, CredentialSet):
