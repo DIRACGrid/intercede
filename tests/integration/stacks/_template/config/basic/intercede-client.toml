@@ -4,10 +4,18 @@
 id = "CHANGEME" # this stack's id in stacks.yml
 
 [backend]
-kind = "CHANGEME"     # arc | htcondor-ce | htcondor | ssh | local
-endpoint = "CHANGEME" # e.g. "https://localhost:443/arex" or "localhost:2222"
-queue = "CHANGEME"
+# Exactly what a consumer passes to registry.get_backend. The fields of each kind are those of
+# its configuration model (ARCConfig, HTCondorCEConfig, ...) in the API reference.
+kind = "CHANGEME"     # arc | htcondor-ce | cloud | batch (+ transport, scheduler)
+endpoint = "CHANGEME" # e.g. "https://127.0.0.1:443/arex" or "127.0.0.1:9619"
 
 [credentials]
 type = "CHANGEME"              # token | ssh-key
 path = "credentials/CHANGEME/" # under the ./credentials bind mount
+
+[refusals]
+# What this backend cannot honour; the shared suite checks each is refused at submit.
+# Leave out what it supports.
+containers = true  # running the executable in a container image
+url_inputs = true  # inputs the resource fetches from a URL itself
+url_outputs = true # outputs the resource uploads to a URL itself
