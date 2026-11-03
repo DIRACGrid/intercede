@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -17,8 +18,9 @@ from intercede import (
 from intercede._backends.batch.protocols import CommandResult
 from intercede._backends.monolith.htcondorce import HTCondorCEBackend
 from intercede._backends.monolith.htcondorce.process import run_process
+from intercede.auth import BearerToken, StaticCredentials
 
-from ._fake_condor import ENDPOINT, SPEC, TOKEN, FakeCondor, make, ok
+from ._fake_condor import ENDPOINT, SPEC, TOKEN, FakeCondor, make, ok, settings
 
 
 class TestEnvironment:
@@ -71,6 +73,27 @@ class TestEnvironment:
             condor.calls[0].env["_CONDOR_AUTH_SSL_CLIENT_CADIR"]
             == "/etc/grid-security/certificates"
         )
+
+    async def test_scopes_follow_the_operation(self, condor: FakeCondor, workdir: Path):
+        asked: list[frozenset[str]] = []
+
+        class Recording(StaticCredentials):
+            async def get(self, requirements: Any) -> Any:
+                asked.append(requirements.scopes)
+                return await super().get(requirements)
+
+        handle = JobHandle(backend="htcondor-ce", resource=ENDPOINT, id=JobID("1.0"))
+        backend = HTCondorCEBackend(
+            settings(),
+            Recording([BearerToken(value=TOKEN)]),
+            runner=condor,
+            workdir=workdir,
+        )
+        async with backend:
+            await backend.submit(SPEC)
+            await backend.get_status([handle])
+            await backend.kill([handle])
+        assert asked[:2] == [frozenset({"compute.create"}), frozenset({"compute.read"})]
 
 
 class TestErrors:

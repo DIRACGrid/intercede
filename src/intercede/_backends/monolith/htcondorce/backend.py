@@ -29,11 +29,12 @@ from intercede.models import (
     JobHandle,
     JobID,
     JobStatus,
+    OpOutcome,
     StatusMap,
     Submission,
     SubmissionSpec,
 )
-from intercede.protocols import JobBackend
+from intercede.protocols import JobBackend, Killable, Purgeable
 
 BACKEND = "htcondor-ce"
 DEFAULT_PORT = 9619
@@ -42,12 +43,14 @@ DEFAULT_PORT = 9619
 # a read scope and nothing that would let it submit.
 SUBMIT_SCOPES = frozenset({"compute.create"})
 READ_SCOPES = frozenset({"compute.read"})
+CANCEL_SCOPES = frozenset({"compute.cancel"})
 
+_ACTIVE = frozenset({JobStatus.SUBMITTED, JobStatus.WAITING, JobStatus.RUNNING})
 _JOB_ID = re.compile(r"^\d+\.\d+$")
 
 
 class HTCondorCEBackend:
-    """An HTCondor-CE: submit and status.
+    """An HTCondor-CE: submit, status, kill and purge.
 
     It has no live diagnostics (issue #23); ``Diagnosable`` is absent on purpose.
     """
@@ -185,6 +188,64 @@ class HTCondorCEBackend:
             for handle in handles
         }
 
+    # -- Killable / Purgeable ----------------------------------------------
+
+    async def kill(
+        self, handles: Sequence[JobHandle]
+    ) -> Mapping[JobHandle, OpOutcome[None]]:
+        self._check_usable()
+        ids = self._ids(handles)
+        ads = await self._ads(ids, status.STATE_ATTRIBUTES, history=True)
+        # Only active jobs are removed: removing a finished job would release
+        # output that has not been collected yet. That is purge()'s job.
+        active = [i for i in ids if i in ads and status.job_status(ads[i]) in _ACTIVE]
+        removed, reason = await self._remove(active)
+        return {
+            handle: self._outcome(
+                handle, ads, active, removed, reason, "already finished"
+            )
+            for handle in handles
+        }
+
+    async def purge(
+        self, handles: Sequence[JobHandle]
+    ) -> Mapping[JobHandle, OpOutcome[None]]:
+        self._check_usable()
+        ids = self._ids(handles)
+        queued = await self._ads(ids, status.STATE_ATTRIBUTES, history=False)
+        gone = await self._ads(
+            [i for i in ids if i not in queued], status.STATE_ATTRIBUTES, history=True
+        )
+        # A job removed a moment ago is still queued, but already released.
+        targeted = [i for i, ad in queued.items() if not status.is_removed(ad)]
+        removed, reason = await self._remove(targeted)
+        ads = {**gone, **queued}
+        return {
+            handle: self._outcome(
+                handle, ads, targeted, removed, reason, "already released"
+            )
+            for handle in handles
+        }
+
+    def _outcome(
+        self,
+        handle: JobHandle,
+        ads: Mapping[JobID, Mapping[str, Any]],
+        targeted: Sequence[JobID],
+        removed: set[JobID],
+        reason: str,
+        untouched: str,
+    ) -> OpOutcome[None]:
+        if not self._owns(handle) or handle.id not in ads:
+            return OpOutcome[None](ok=False, reason="unknown job")
+        if handle.id not in targeted:
+            return OpOutcome[None](ok=True, reason=untouched)
+        if handle.id in removed:
+            return OpOutcome[None](ok=True)
+        return OpOutcome[None](
+            ok=False, reason=reason or "condor_rm did not remove the job"
+        )
+
     # -- talking to the CE ----------------------------------------------------
 
     @asynccontextmanager
@@ -212,6 +273,12 @@ class HTCondorCEBackend:
             return {}
         async with self._session(READ_SCOPES) as session:
             return await session.ads(ids, attributes, history=history)
+
+    async def _remove(self, ids: Sequence[JobID]) -> tuple[set[JobID], str]:
+        if not ids:
+            return set(), ""
+        async with self._session(CANCEL_SCOPES) as session:
+            return await session.remove(ids)
 
     # -- helpers -------------------------------------------------------------
 
@@ -245,6 +312,8 @@ def split_endpoint(endpoint: str) -> tuple[str, int]:
 
 # The type checker proves conformance.
 _backend: type[JobBackend] = HTCondorCEBackend
+_kill: type[Killable] = HTCondorCEBackend
+_purge: type[Purgeable] = HTCondorCEBackend
 _built_by_registry: Callable[[HTCondorCEConfig, CredentialProvider], JobBackend] = (
     HTCondorCEBackend.from_settings
 )

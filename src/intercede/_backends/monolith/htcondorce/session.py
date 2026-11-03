@@ -152,6 +152,18 @@ class CondorSession:
                 found.update(result)
         return found
 
+    async def remove(self, ids: Sequence[JobID]) -> tuple[set[JobID], str]:
+        """Remove jobs; return those removed, and why the others were not."""
+        removed: set[JobID] = set()
+        reason = ""
+        for chunk in commands.chunks(ids):
+            result = await self.run(commands.remove(chunk, self._remote))
+            parsed_result = commands.parse_remove(result.stdout)
+            removed.update(parsed_result)
+            if result.returncode != 0:
+                reason = failure(result, "condor_rm")
+        return removed, reason
+
     async def _read(self, argv: Sequence[str]) -> dict[JobID, Mapping[str, Any]]:
         result = await self.run(argv)
         require_success(result, argv[0])

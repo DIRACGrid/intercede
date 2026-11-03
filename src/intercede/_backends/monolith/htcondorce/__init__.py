@@ -5,7 +5,7 @@ The backend drives the HTCondor command-line tools, as DIRAC's
 submitted with ``condor_submit -remote`` and their inputs spooled to the CE at
 submit time, so no HTCondor daemon runs on the submitting host.
 
-- ``backend``: the contract operations (submit, status)
+- ``backend``: the contract operations (submit, status, kill, purge)
 - ``session``: one operation's credentials, and the tools run with them
 - ``staging``: the private working area, and what a submission puts in it
 - ``process``: running one tool as a subprocess
