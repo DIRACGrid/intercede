@@ -312,7 +312,12 @@ class FakeBackend:
         contents: dict[str, bytes] = {}
         for ref in inputs:
             if not _is_url(ref.source):
-                contents[ref.name] = Path(ref.source).read_bytes()
+                try:
+                    contents[ref.name] = Path(ref.source).read_bytes()
+                except OSError as exc:
+                    raise SpecificationRejectedError(
+                        f"input {ref.name!r}: cannot read {ref.source}: {exc.strerror}"
+                    ) from exc
         return contents
 
     @staticmethod
