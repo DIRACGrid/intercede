@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 import shutil
 import uuid
+import weakref
 from collections.abc import AsyncGenerator, Callable, Iterable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -14,11 +16,12 @@ from typing import Any, Self
 from intercede._backends._htcondor import status
 from intercede._backends._htcondor.submit import SubmitPlan, render
 from intercede._backends.credentials import credential_requirements, refresh_if_stale
-from intercede._backends.monolith.htcondorce import staging
+from intercede._backends.monolith.htcondorce import collect, staging
 from intercede._backends.monolith.htcondorce.process import Runner, run_process
 from intercede._backends.monolith.htcondorce.session import (
     CondorSession,
     credential_files,
+    failure,
 )
 from intercede.auth.models import BearerToken
 from intercede.auth.protocols import CredentialProvider
@@ -28,16 +31,18 @@ from intercede.models import (
     CopyVars,
     JobHandle,
     JobID,
+    JobOutput,
     JobStatus,
     OpOutcome,
     StatusMap,
     Submission,
     SubmissionSpec,
 )
-from intercede.protocols import JobBackend, Killable, Purgeable
+from intercede.protocols import JobBackend, Killable, OutputRetriever, Purgeable
 
 BACKEND = "htcondor-ce"
 DEFAULT_PORT = 9619
+PARALLEL_TRANSFERS = 4
 
 # Token scopes per operation (WLCG token profile), so a status poller carries
 # a read scope and nothing that would let it submit.
@@ -47,10 +52,12 @@ CANCEL_SCOPES = frozenset({"compute.cancel"})
 
 _ACTIVE = frozenset({JobStatus.SUBMITTED, JobStatus.WAITING, JobStatus.RUNNING})
 _JOB_ID = re.compile(r"^\d+\.\d+$")
+# Attributes get_output() needs on top of the state.
+_OUTPUT_ATTRIBUTES = (*status.STATE_ATTRIBUTES, "Out", "Err", "UserLog", "SUBMIT_Iwd")
 
 
 class HTCondorCEBackend:
-    """An HTCondor-CE: submit, status, kill and purge.
+    """An HTCondor-CE: submit, status, output, kill and purge.
 
     It has no live diagnostics (issue #23); ``Diagnosable`` is absent on purpose.
     """
@@ -73,6 +80,11 @@ class HTCondorCEBackend:
         # The CE's schedd is named after its host unless the site says otherwise.
         self._name = settings.schedd or self._host
         self._tokens: dict[frozenset[str], BearerToken] = {}  # per scope set
+        # Only jobs being collected right now: a lock disappears with its last
+        # user, so the backend keeps no record of the jobs it has seen.
+        self._collecting: weakref.WeakValueDictionary[JobID, asyncio.Lock] = (
+            weakref.WeakValueDictionary()
+        )
         self._closed = False
 
     @classmethod
@@ -187,6 +199,86 @@ class HTCondorCEBackend:
             else JobStatus.UNKNOWN
             for handle in handles
         }
+
+    # -- OutputRetriever ---------------------------------------------------
+
+    async def get_output(
+        self, handles: Sequence[JobHandle], dest: Path
+    ) -> Mapping[JobHandle, OpOutcome[JobOutput]]:
+        self._check_usable()
+        ids = self._ids(handles)
+        queued = await self._ads(ids, _OUTPUT_ATTRIBUTES, history=False)
+        gone = await self._ads(
+            [i for i in ids if i not in queued], status.STATE_ATTRIBUTES, history=True
+        )
+
+        results: dict[JobHandle, OpOutcome[JobOutput]] = {}
+        ready: list[tuple[JobHandle, Mapping[str, Any]]] = []
+        for handle in handles:
+            ad = queued.get(handle.id) if self._owns(handle) else None
+            if ad is not None and status.is_removed(ad):
+                # Purged a moment ago: released, though not out of the queue yet.
+                results[handle] = OpOutcome[JobOutput](
+                    ok=False, reason="the job was purged; its output is gone"
+                )
+            elif ad is None:
+                known = self._owns(handle) and handle.id in gone
+                reason = (
+                    "the job has left the queue; its output is gone"
+                    if known
+                    else "unknown job"
+                )
+                results[handle] = OpOutcome[JobOutput](ok=False, reason=reason)
+            elif status.job_status(ad) in _ACTIVE:
+                results[handle] = OpOutcome[JobOutput](
+                    ok=False, reason="job has not finished"
+                )
+            else:
+                ready.append((handle, ad))
+
+        if ready:
+            limit = asyncio.Semaphore(PARALLEL_TRANSFERS)
+            async with self._session(READ_SCOPES) as session:
+
+                async def fetch(handle: JobHandle, ad: Mapping[str, Any]) -> None:
+                    async with limit:
+                        results[handle] = await self._collect(session, handle, ad, dest)
+
+                await asyncio.gather(*(fetch(handle, ad) for handle, ad in ready))
+        return {handle: results[handle] for handle in handles}  # in the caller's order
+
+    async def _collect(
+        self,
+        session: CondorSession,
+        handle: JobHandle,
+        ad: Mapping[str, Any],
+        dest: Path,
+    ) -> OpOutcome[JobOutput]:
+        iwd = Path(str(ad.get("SUBMIT_Iwd", "")))
+        # SUBMIT_Iwd comes from the remote job ad: never let the CE choose
+        # where on this host we write.
+        if not collect.inside_workdir(iwd, self._workdir):
+            return OpOutcome[JobOutput](
+                ok=False,
+                reason="the job's output directory is outside our working area",
+            )
+        # Two collections of one job would write into the same directory.
+        lock = self._collecting.get(handle.id)
+        if lock is None:
+            lock = self._collecting[handle.id] = asyncio.Lock()
+        async with lock:
+            try:
+                result = await session.transfer(
+                    handle.id, self._settings.transfer_timeout_s
+                )
+                if result.returncode != 0:
+                    return OpOutcome[JobOutput](
+                        ok=False, reason=failure(result, "condor_transfer_data")
+                    )
+                target = dest / self._host / handle.id
+                return collect.move_output(iwd, ad, target, self._settings)
+            finally:
+                shutil.rmtree(iwd, ignore_errors=True)
 
     # -- Killable / Purgeable ----------------------------------------------
 
@@ -312,6 +404,7 @@ def split_endpoint(endpoint: str) -> tuple[str, int]:
 
 # The type checker proves conformance.
 _backend: type[JobBackend] = HTCondorCEBackend
+_output: type[OutputRetriever] = HTCondorCEBackend
 _kill: type[Killable] = HTCondorCEBackend
 _purge: type[Purgeable] = HTCondorCEBackend
 _built_by_registry: Callable[[HTCondorCEConfig, CredentialProvider], JobBackend] = (

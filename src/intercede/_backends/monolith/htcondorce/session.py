@@ -164,6 +164,10 @@ class CondorSession:
                 reason = failure(result, "condor_rm")
         return removed, reason
 
+    async def transfer(self, job_id: JobID, timeout: float) -> CommandResult:
+        """Fetch one job's spooled output into the directory it was submitted from."""
+        return await self.run(commands.transfer_data([job_id], self._remote), timeout)
+
     async def _read(self, argv: Sequence[str]) -> dict[JobID, Mapping[str, Any]]:
         result = await self.run(argv)
         require_success(result, argv[0])

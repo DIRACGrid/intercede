@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -58,6 +59,22 @@ class TestKill:
 
 
 class TestPurge:
+    async def test_a_job_removed_but_still_queued_is_already_released(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        # condor_rm returns before the schedd drops the job from the queue.
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id, code=3, LastJobStatus=4)
+        condor.calls.clear()
+        output = (await ce.get_output([h], tmp_path))[h]
+        assert (
+            not output.ok and output.reason == "the job was purged; its output is gone"
+        )
+        again = (await ce.purge([h]))[h]
+        assert again.ok and again.reason == "already released"
+        assert "condor_transfer_data" not in condor.tools()
+        assert "condor_rm" not in condor.tools()
+
     async def test_twice_is_harmless(self, ce: HTCondorCEBackend):
         h = (await ce.submit(SPEC)).handles[0]
         await ce.purge([h])
