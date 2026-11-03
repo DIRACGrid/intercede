@@ -45,6 +45,7 @@ __all__ = ["available", "get_backend"]
 # never need classes of their own.
 _BACKENDS: dict[str, str] = {
     "fake": "intercede._backends.fake:FakeBackend",  # internal, for the test suites
+    "htcondor-ce": "intercede._backends.monolith.htcondorce:HTCondorCEBackend",
 }
 _TRANSPORTS: dict[str, str] = {}
 _SCHEDULERS: dict[str, str] = {}
