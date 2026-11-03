@@ -10,7 +10,8 @@ from typing import Any
 
 import pytest
 
-from intercede._backends._htcondor import submit
+from intercede import JobStatus
+from intercede._backends._htcondor import commands, status, submit
 from intercede._backends._htcondor.submit import CopyPlan, SubmitPlan, render
 
 # --------------------------------------------------------------------------
@@ -190,3 +191,178 @@ class TestRender:
     def test_paths_cannot_hold_a_line_break(self):
         with pytest.raises(ValueError, match="line break"):
             render(plan(copies=[CopyPlan("/work/a\nqueue 100")]))
+
+
+# --------------------------------------------------------------------------
+# Commands
+# --------------------------------------------------------------------------
+
+
+class TestCommands:
+    def test_submit_to_the_local_schedd_spools(self):
+        assert commands.submit("/w/job.sub") == [
+            "condor_submit",
+            "-terse",
+            "-spool",
+            "/w/job.sub",
+        ]
+
+    @pytest.mark.parametrize(
+        ("count", "sizes"),
+        [(100, [100]), (101, [100, 1]), (250, [100, 100, 50])],
+    )
+    def test_chunks(self, count: int, sizes: list[int]):
+        ids = [status.JobID(f"1.{i}") for i in range(count)]
+        chunked = commands.chunks(ids)
+        assert [len(chunk) for chunk in chunked] == sizes
+        assert [i for chunk in chunked for i in chunk] == ids
+
+
+class TestParseSubmit:
+    @pytest.mark.parametrize(
+        ("raw", "ids"),
+        [
+            ("1.0 - 1.1\n", ["1.0", "1.1"]),
+            ("  42.0 - 42.0  ", ["42.0"]),
+            ("\n7.3 - 7.5\n\n", ["7.3", "7.4", "7.5"]),
+        ],
+    )
+    def test_terse_output(self, raw: str, ids: list[str]):
+        assert commands.parse_submit(raw) == ids
+
+    @pytest.mark.parametrize(
+        "raw",
+        [
+            "",
+            "Submitting job(s).\n1 job(s) submitted to cluster 1.",
+            "1.0 - 2.0",
+            "1.3 - 1.1",
+            "1.0 - 1.1\n2.0 - 2.1",
+            "x",
+        ],
+        ids=["empty", "verbose", "two-clusters", "backwards", "two-lines", "garbage"],
+    )
+    def test_anything_else_is_refused(self, raw: str):
+        with pytest.raises(ValueError, match="unexpected condor_submit output"):
+            commands.parse_submit(raw)
+
+
+def test_parse_remove():
+    raw = "Job 1.0 marked for removal\nJob 1.2 marked for removal\nCouldn't find/remove all jobs matching 1.1\n"
+    assert commands.parse_remove(raw) == {"1.0", "1.2"}
+    assert commands.parse_remove("") == set()
+
+
+# --------------------------------------------------------------------------
+# State mapping
+# --------------------------------------------------------------------------
+
+
+def ad(**fields: Any) -> dict[str, Any]:
+    return {"ClusterId": 3, "ProcId": 1, **fields}
+
+
+class TestJobStatus:
+    @pytest.mark.parametrize(
+        ("code", "expected"),
+        [
+            (1, JobStatus.WAITING),
+            (2, JobStatus.RUNNING),
+            (4, JobStatus.DONE),
+            (6, JobStatus.RUNNING),
+            (7, JobStatus.WAITING),
+        ],
+        ids=["idle", "running", "completed", "transferring-output", "suspended"],
+    )
+    def test_plain_states(self, code: int, expected: JobStatus):
+        assert status.job_status(ad(JobStatus=code)) == expected
+
+    @pytest.mark.parametrize(
+        "code",
+        [8, None],
+        ids=["unexpected", "missing"],
+    )
+    def test_unknown_codes(self, code: Any):
+        assert status.job_status(ad(JobStatus=code)) == JobStatus.UNKNOWN
+
+    @pytest.mark.parametrize(
+        ("fields", "expected"),
+        [
+            ({"ExitCode": 0, "ExitBySignal": False}, JobStatus.DONE),
+            ({"ExitCode": 3, "ExitBySignal": False}, JobStatus.FAILED),
+            ({"ExitBySignal": True, "ExitSignal": 9}, JobStatus.FAILED),
+            ({}, JobStatus.DONE),
+        ],
+        ids=["exit-0", "exit-3", "signal", "no-exit-info"],
+    )
+    def test_finished_payload_result_comes_from_its_exit(
+        self, fields: dict[str, Any], expected: JobStatus
+    ):
+        # Read from what HTCondor records; no hold is put on the job to tell.
+        assert status.job_status(ad(JobStatus=4, **fields)) == expected
+
+    def test_spooling_is_waiting(self):
+        assert (
+            status.job_status(ad(JobStatus=5, HoldReasonCode=16)) == JobStatus.WAITING
+        )
+
+    @pytest.mark.parametrize(
+        "fields",
+        [{"HoldReasonCode": 1}, {"HoldReasonCode": 3, "HoldReasonSubCode": 55}, {}],
+        ids=["by-user", "by-site-policy", "no-reason"],
+    )
+    def test_any_other_hold_is_aborted(self, fields: dict[str, Any]):
+        assert status.job_status(ad(JobStatus=5, **fields)) == JobStatus.ABORTED
+
+    @pytest.mark.parametrize(
+        ("fields", "expected"),
+        [
+            ({"LastJobStatus": 4, "ExitCode": 0}, JobStatus.DONE),
+            ({"LastJobStatus": 4}, JobStatus.DONE),
+            ({"LastJobStatus": 4, "ExitCode": 2}, JobStatus.FAILED),
+            ({"LastJobStatus": 4, "ExitBySignal": True}, JobStatus.FAILED),
+            ({"LastJobStatus": 5, "ExitCode": 3}, JobStatus.ABORTED),
+            ({"LastJobStatus": 2}, JobStatus.ABORTED),
+            ({"LastJobStatus": 1}, JobStatus.ABORTED),
+            ({}, JobStatus.ABORTED),
+        ],
+        ids=[
+            "purged-done",
+            "purged-done-no-code",
+            "purged-failed",
+            "purged-signal",
+            "removed-while-held",
+            "killed-running",
+            "killed-idle",
+            "bare",
+        ],
+    )
+    def test_removed_jobs_keep_their_result(
+        self, fields: dict[str, Any], expected: JobStatus
+    ):
+        assert status.job_status(ad(JobStatus=3, **fields)) == expected
+
+
+class TestParseAds:
+    def test_condor_q_prints_nothing_for_no_match(self):
+        assert status.parse_ads("") == []
+        assert status.parse_ads("\n  \n") == []
+
+    def test_condor_history_prints_an_empty_list(self):
+        assert status.parse_ads("[\n]\n") == []
+
+    @pytest.mark.parametrize("raw", ["{}", "[1, 2]", '"text"', "not json"])
+    def test_anything_else_is_refused(self, raw: str):
+        with pytest.raises(ValueError):
+            status.parse_ads(raw)
+
+    def test_every_status_query_asks_for_what_the_mapping_reads(self):
+        assert {
+            "ClusterId",
+            "ProcId",
+            "JobStatus",
+            "LastJobStatus",
+            "ExitCode",
+            "ExitBySignal",
+            "HoldReasonCode",
+        } <= set(status.STATE_ATTRIBUTES)
