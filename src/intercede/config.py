@@ -23,6 +23,7 @@ closed set: they list what interCEde ships.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from typing import Annotated, Any, Literal, Self
 
@@ -91,6 +92,10 @@ class _QueueConfig(_Config):
 
 # -- grid CEs that schedule by themselves -------------------------------------
 
+_HOST_PORT = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?(?::\d{1,5})?")
+# "host" or "name@host": no leading "-" and no spaces, so never read as an option.
+_SCHEDD = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]*(?:@[A-Za-z0-9][A-Za-z0-9.-]*)?")
+
 
 class ARCConfig(_QueueConfig):
     """An ARC CE."""
@@ -110,6 +115,23 @@ class HTCondorCEConfig(_QueueConfig):
 
     endpoint: str
     """The CE's collector, as ``"host"`` or ``"host:port"``, e.g. ``"ce.example.org:9619"``."""
+
+    schedd: str | None = None
+    """The CE's schedd, when it is not named after the endpoint's host: ``"name@host"``
+    for one of several CEs on one host, or a CE behind a forwarded address."""
+
+    @model_validator(mode="after")
+    def _names_fit_a_command_line(self) -> Self:
+        # Both end up on the tools' command lines, as "-pool host:port -name schedd".
+        if not _HOST_PORT.fullmatch(self.endpoint):
+            raise ValueError(
+                "endpoint must be 'host' or 'host:port', e.g. 'ce.example.org:9619'"
+            )
+        if self.schedd is not None and not _SCHEDD.fullmatch(self.schedd):
+            raise ValueError(
+                "schedd must be 'host' or 'name@host', e.g. 'ce01@ce.example.org'"
+            )
+        return self
 
 
 # -- a cloud provider that boots one VM per job --------------------------------
