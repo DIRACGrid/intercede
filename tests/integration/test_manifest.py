@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from _pytest.mark.expression import Expression
+
+from tests.integration.conftest import required_markers
 from tests.integration.generate_matrix import (
     STACKS_DIR,
     compose_env,
@@ -39,3 +42,13 @@ def test_landed_stacks_follow_the_layout():
         for config in entry["configs"]:
             client_toml = own_dir / "config" / config / "intercede-client.toml"
             assert client_toml.is_file(), f"{client_toml} is missing"
+
+
+def test_every_stack_selects_the_shared_suite():
+    """The markers a shared test gets from a stack must satisfy that stack's `-m`."""
+    for entry in load_manifest():
+        given = required_markers(entry["markers"])
+        selected = Expression.compile(entry["markers"]).evaluate(
+            lambda name, given=given, **_: name in given
+        )
+        assert selected, f"stack {entry['id']}: its markers would skip the shared suite"
