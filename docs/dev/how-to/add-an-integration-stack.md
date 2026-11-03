@@ -35,8 +35,9 @@ You do not need to change any CI workflow. CI finds the stack in `stacks.yml`.
 - [ ] The images use Docker, not Podman.
 - [ ] `intercede-client.toml` is filled in: `id`, endpoint, queue, credential type and path.
 - [ ] `pytest tests/integration/test_manifest.py` passes.
-- [ ] At least one test runs for this stack (phase 0: a test that uses the backend's own
-      command-line tools). Without one, the CI job passes but tests nothing.
+- [ ] The shared suite passes on this stack (`pytest tests/integration -m "<markers>" --stack=<id>`).
+      You do not write tests for a new backend: the stack runs the `contract` tests, skipping
+      those for capabilities the backend does not have.
 - [ ] If your pull request had its own workflow for this stack, remove it. `integration.yml` runs
       on every pull request that changes `tests/integration/`. It does not block merging yet
       (#14), so keep your own workflow only if you need a check that blocks merging.
