@@ -22,7 +22,7 @@ from intercede._backends._htcondor import commands, status
 from intercede._backends.batch.protocols import CommandResult
 from intercede._backends.monolith.htcondorce.process import Runner
 from intercede._backends.monolith.htcondorce.staging import write_private
-from intercede.auth.models import BearerToken, CredentialSet, X509Proxy
+from intercede.auth.models import BearerToken
 from intercede.exceptions import AuthenticationError, ResourceUnavailableError
 from intercede.models import JobID
 
@@ -31,22 +31,18 @@ COMMAND_TIMEOUT_S = 120  # every command but output transfer, which uses the lim
 
 @dataclass(frozen=True)
 class CredentialFiles:
-    """Where one operation's credentials are, while it runs."""
+    """Where one operation's token is, while it runs."""
 
     token: Path
     token_dir: Path
-    proxy: Path | None
     scratch: Path  # HTCondor's LOG directory (SciTokens keeps a cache there)
 
 
 @asynccontextmanager
 async def credential_files(
-    credentials: CredentialSet, workdir: Path, resource: str
+    token: BearerToken, workdir: Path
 ) -> AsyncGenerator[CredentialFiles, None]:
-    """Write the credentials to private files for the duration of one operation."""
-    token = credentials.get(BearerToken)
-    if token is None:
-        raise AuthenticationError(f"no token for {resource}")
+    """Write the token to private files for the duration of one operation."""
     directory = Path(tempfile.mkdtemp(prefix="cred-", dir=workdir))  # mode 0700
     try:
         token_dir = directory / "tokens.d"
@@ -54,17 +50,11 @@ async def credential_files(
         secret = token.value.get_secret_value().encode()
         for path in (directory / "token", token_dir / "token"):
             write_private(path, secret)
-        proxy = credentials.get(X509Proxy)
-        proxy_path = None
-        if proxy is not None:
-            proxy_path = directory / "proxy"
-            write_private(proxy_path, proxy.pem.get_secret_value())
         scratch = directory / "log"
         scratch.mkdir(mode=0o700)
         yield CredentialFiles(
             token=directory / "token",
             token_dir=token_dir,
-            proxy=proxy_path,
             scratch=scratch,
         )
     finally:
@@ -93,10 +83,6 @@ def environment(files: CredentialFiles) -> dict[str, str]:
     )
     if "X509_CERT_DIR" in env:  # the CAs the CE's host certificate is checked against
         env["_CONDOR_AUTH_SSL_CLIENT_CADIR"] = env["X509_CERT_DIR"]
-    if files.proxy is not None:
-        # The proxy only rides in the job for the site's VOMS accounting;
-        # delegating it fails on current HTCondor (HTCONDOR-2904).
-        env["_CONDOR_DELEGATE_JOB_GSI_CREDENTIALS"] = "false"
     return env
 
 
