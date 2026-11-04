@@ -96,7 +96,6 @@ class SubmitPlan:
     memory_mb: int | None = None
     wall_time_s: int | None = None
     queue: str | None = None
-    proxy_file: str | None = None
 
 
 def render(plan: SubmitPlan) -> str:
@@ -107,7 +106,6 @@ def render(plan: SubmitPlan) -> str:
     lines.extend(_render_copies(plan))
     lines.extend(_render_file_transfer(plan))
     lines.extend(_render_resources(plan))
-    lines.extend(_render_proxy(plan))
     lines.extend(_render_queue(plan))
 
     return "\n".join(lines) + "\n"
@@ -211,13 +209,6 @@ def _render_resources(plan: SubmitPlan) -> list[str]:
         lines.append(f"+queue = {_classad_string(plan.queue)}")
 
     return lines
-
-
-def _render_proxy(plan: SubmitPlan) -> list[str]:
-    if plan.proxy_file is None:
-        return []
-
-    return [f"x509userproxy = {_escape_macros(plan.proxy_file)}"]
 
 
 def _render_queue(plan: SubmitPlan) -> list[str]:
