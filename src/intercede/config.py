@@ -16,7 +16,7 @@ as a parsed TOML table, to ``validate_config`` or ``registry.get_backend``::
     known_hosts = "batch.example.org ssh-ed25519 AAAA..."
 
 Configuration describes the resource and is never secret: keys, passwords,
-tokens and proxies come from the credential provider at run time. Error
+and tokens come from the credential provider at run time. Error
 messages therefore never repeat the values they were given. The kinds are a
 closed set: they list what interCEde ships.
 """
@@ -101,15 +101,8 @@ class ARCConfig(_QueueConfig):
     endpoint: str
     """The CE's REST endpoint, e.g. ``"https://arc.example.org:443/arex"``."""
 
-    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
-    """Which credentials the provider must supply, all of them together: a token
-    for the channel, a proxy for delegation, or both."""
-
-    @model_validator(mode="after")
-    def _auth_not_empty(self) -> Self:
-        if not self.auth:
-            raise ValueError("auth must name at least one of 'token', 'proxy'")
-        return self
+    auth: Literal["token"] = "token"
+    """Which credential the provider must supply: a token for the channel."""
 
 
 class HTCondorCEConfig(_QueueConfig):
@@ -121,17 +114,8 @@ class HTCondorCEConfig(_QueueConfig):
     endpoint: str
     """The CE's collector, as ``"host"`` or ``"host:port"``, e.g. ``"ce.example.org:9619"``."""
 
-    auth: frozenset[Literal["token", "proxy"]] = frozenset({"token"})
-    """Which credentials the provider must supply. The token authenticates the
-    channel; ``"proxy"`` adds an X.509 proxy for sites that account on VOMS attributes."""
-
-    @model_validator(mode="after")
-    def _token_required(self) -> Self:
-        if "token" not in self.auth:
-            raise ValueError(
-                "an HTCondor-CE authenticates with a token; auth must include 'token'"
-            )
-        return self
+    auth: Literal["token"] = "token"
+    """Which credential the provider must supply: a token for the channel."""
 
 
 # -- a cloud provider that boots one VM per job --------------------------------

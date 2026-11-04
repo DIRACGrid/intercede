@@ -1,4 +1,4 @@
-"""Credential values, sets, requirements and the static provider."""
+"""Credential values, requirements and the static provider."""
 
 from __future__ import annotations
 
@@ -14,19 +14,17 @@ from intercede.auth import (
     Credential,
     CredentialProvider,
     CredentialRequirements,
-    CredentialSet,
     SSHPassword,
     SSHPrivateKey,
     StaticCredentials,
-    X509Proxy,
 )
+from intercede.exceptions import AuthenticationError
 
 SECRET = "TOPSECRET"  # noqa: S105  (a fake secret the tests look for)
 
 # One instance of every kind, each holding SECRET in all of its secret fields.
 EVERY_KIND: dict[type[Credential], Credential] = {
     BearerToken: BearerToken(value=SECRET),
-    X509Proxy: X509Proxy(pem=SECRET.encode()),
     SSHPrivateKey: SSHPrivateKey(pem=SECRET.encode(), passphrase=SECRET),
     SSHPassword: SSHPassword(value=SECRET),
 }
@@ -35,13 +33,10 @@ EVERY_KIND: dict[type[Credential], Credential] = {
 @pytest.mark.parametrize("kind", list(EVERY_KIND), ids=lambda kind: kind.__name__)
 def test_a_secret_never_shows(kind: type[Credential]):
     credential = EVERY_KIND[kind]
-    credentials = CredentialSet([credential])
     for shown in (
         repr(credential),
         str(credential),
         credential.model_dump_json(),
-        repr(credentials),
-        credentials.model_dump_json(),
         repr(StaticCredentials([credential])),
     ):
         assert SECRET not in shown
@@ -52,13 +47,12 @@ def test_a_secret_never_shows(kind: type[Credential]):
     [
         lambda: BearerToken(value="t", token=SECRET),
         lambda: SSHPrivateKey(pem=b"k", passphrase=[SECRET]),
-        lambda: CredentialSet([{"value": SECRET}]),
         lambda: StaticCredentials([{"value": SECRET}]),
     ],
-    ids=["unknown-field", "wrong-type", "plain-data-in-set", "plain-data-in-provider"],
+    ids=["unknown-field", "wrong-type", "plain-data-in-provider"],
 )
 def test_a_mistake_never_repeats_the_secret(build: Callable[[], Any]):
-    with pytest.raises(ValidationError) as exc_info:
+    with pytest.raises(ValueError) as exc_info:  # also pydantic's ValidationError
         build()
     assert SECRET not in str(exc_info.value)
 
@@ -69,49 +63,50 @@ def test_expiry_must_have_a_timezone():
         BearerToken(value="t", expires_at=datetime(2030, 1, 1))  # noqa: DTZ001
 
 
-class TestCredentialSet:
-    def test_get_goes_by_kind_not_by_shape(self):
-        # A token and a password both have a single "value" field.
-        password = SSHPassword(value="pw")
-        credentials = CredentialSet([password])
-        assert credentials.get(SSHPassword) is password
-        assert credentials.get(BearerToken) is None
-
-    def test_one_credential_per_kind(self):
-        with pytest.raises(ValidationError, match="BearerToken"):
-            CredentialSet([BearerToken(value="a"), BearerToken(value="b")])
-
-    @pytest.mark.parametrize("item", [{"value": "x"}, "token", Credential()])
-    def test_only_concrete_credentials(self, item: Any):
-        with pytest.raises(ValidationError):
-            CredentialSet([item])
-
-
 class TestCredentialRequirements:
-    def test_needs_at_least_one_kind(self):
-        with pytest.raises(ValidationError, match="at least one"):
-            CredentialRequirements(resource="r", kinds=frozenset())
+    def test_names_one_kind(self):
+        requirements = CredentialRequirements(resource="r", kind=BearerToken)
+        assert requirements.kind is BearerToken
+
+    def test_needs_a_kind(self):
+        with pytest.raises(ValidationError, match="kind"):
+            CredentialRequirements(resource="r")  # type: ignore[call-arg]
 
     @pytest.mark.parametrize("kind", [Credential, str, "BearerToken"])
-    def test_kinds_are_concrete_credential_classes(self, kind: Any):
+    def test_the_kind_is_a_concrete_credential_class(self, kind: Any):
         with pytest.raises(ValidationError):
-            CredentialRequirements(resource="r", kinds=frozenset({kind}))
+            CredentialRequirements(resource="r", kind=kind)
 
 
 class TestStaticCredentials:
     def test_is_a_provider(self):
         assert isinstance(StaticCredentials(), CredentialProvider)
 
-    async def test_hands_out_only_the_requested_kinds(self):
-        token, proxy = BearerToken(value="t"), X509Proxy(pem=b"p")
-        provider = StaticCredentials([token, proxy, SSHPassword(value="pw")])
-        requirements = CredentialRequirements(
-            resource="ce:9619", kinds=frozenset({BearerToken, X509Proxy, SSHPrivateKey})
-        )
+    async def test_hands_out_only_the_requested_kind(self):
+        token, password = BearerToken(value="t"), SSHPassword(value="pw")
+        provider = StaticCredentials([token, password])
+        requirements = CredentialRequirements(resource="ce:9619", kind=BearerToken)
         async with provider:
-            supplied = await provider.get(requirements)
-        assert supplied.root == (token, proxy)
+            assert await provider.get(requirements) is token
 
-    def test_refuses_bad_input_at_construction(self):
-        with pytest.raises(ValidationError):
-            StaticCredentials([BearerToken(value="a"), BearerToken(value="b")])
+    async def test_a_kind_it_does_not_hold_is_named(self):
+        # A token and a password both have a single "value" field: it goes by
+        # kind, not by shape.
+        provider = StaticCredentials([SSHPassword(value="pw")])
+        requirements = CredentialRequirements(resource="ce:9619", kind=BearerToken)
+        with pytest.raises(AuthenticationError, match="no BearerToken for ce:9619"):
+            await provider.get(requirements)
+
+    @pytest.mark.parametrize(
+        "credentials",
+        [
+            [BearerToken(value="a"), BearerToken(value="b")],
+            [{"value": "x"}],
+            ["token"],
+            [Credential()],
+        ],
+        ids=["two-of-a-kind", "plain-data", "a-string", "the-base-class"],
+    )
+    def test_refuses_bad_input_at_construction(self, credentials: Any):
+        with pytest.raises(ValueError):
+            StaticCredentials(credentials)

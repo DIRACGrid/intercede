@@ -6,8 +6,9 @@ from collections.abc import Iterable
 from types import TracebackType
 from typing import Self
 
-from intercede.auth.models import Credential, CredentialRequirements, CredentialSet
+from intercede.auth.models import Credential, CredentialRequirements
 from intercede.auth.protocols import CredentialProvider
+from intercede.exceptions import AuthenticationError
 
 __all__ = ["StaticCredentials"]
 
@@ -16,21 +17,31 @@ class StaticCredentials:
     """A provider holding fixed credentials: files read once, or fixed values.
 
     For standalone use, tests and the integration stacks, where nothing issues
-    or renews credentials. Each backend receives only the kinds it asks for,
-    never the whole set. It holds nothing to release, so closing does nothing,
-    but it is still a context manager, like every provider::
+    or renews credentials. It holds at most one credential of each kind, since
+    one provider can serve several backends, and each backend receives only the
+    one it asks for. It holds nothing to release, so closing does nothing, but
+    it is still a context manager, like every provider::
 
         async with StaticCredentials([SSHPrivateKey(pem=key)]) as credentials:
             backend = registry.get_backend(config, credentials)
     """
 
-    def __init__(self, credentials: CredentialSet | Iterable[Credential] = ()) -> None:
+    def __init__(self, credentials: Iterable[Credential] = ()) -> None:
         # Validated now, so a duplicate kind or plain data fails at construction.
-        self._credentials = (
-            credentials
-            if isinstance(credentials, CredentialSet)
-            else CredentialSet.model_validate(tuple(credentials))
-        )
+        self._credentials: dict[type[Credential], Credential] = {}
+        for credential in credentials:
+            # A plain dict is ambiguous: {"value": ...} fits both a BearerToken
+            # and an SSHPassword. Guessing the kind of a secret is never right.
+            # Never repeat the item in the message: it may be the secret itself.
+            if not isinstance(credential, Credential) or type(credential) is Credential:
+                raise ValueError(
+                    "StaticCredentials holds concrete credential objects, "
+                    "e.g. BearerToken(value=...), not plain data"
+                )
+            kind = type(credential)
+            if kind in self._credentials:
+                raise ValueError(f"more than one credential of kind {kind.__name__}")
+            self._credentials[kind] = credential
 
     async def __aenter__(self) -> Self:
         return self
@@ -43,23 +54,24 @@ class StaticCredentials:
     ) -> None:
         return None
 
-    async def get(self, requirements: CredentialRequirements) -> CredentialSet:
-        """Return the held credentials of the requested kinds.
+    async def get(self, requirements: CredentialRequirements) -> Credential:
+        """Return the held credential of the requested kind.
 
         Args:
             requirements: What the backend asks for.
 
         Returns:
-            The held credentials whose kind is in ``requirements.kinds``. A
-            kind it does not hold is left out, for the backend to report.
+            The held credential of ``requirements.kind``.
+
+        Raises:
+            AuthenticationError: It holds no credential of that kind.
         """
-        return CredentialSet(
-            tuple(
-                credential
-                for credential in self._credentials.root
-                if type(credential) in requirements.kinds
+        credential = self._credentials.get(requirements.kind)
+        if credential is None:
+            raise AuthenticationError(
+                f"no {requirements.kind.__name__} for {requirements.resource}"
             )
-        )
+        return credential
 
 
 _provider: type[CredentialProvider] = StaticCredentials

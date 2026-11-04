@@ -18,7 +18,7 @@ from intercede import (
     registry,
 )
 from intercede._backends.config import FakeConfig
-from intercede.auth import CredentialSet, StaticCredentials
+from intercede.auth import BearerToken, Credential, StaticCredentials
 from intercede.registry import _build, _load
 
 DUMMIES = "tests.unit._registry_dummies"
@@ -103,7 +103,7 @@ class TestBuilds:
         class Watching(StaticCredentials):
             asked = 0
 
-            async def get(self, requirements: Any) -> CredentialSet:
+            async def get(self, requirements: Any) -> Credential:
                 Watching.asked += 1
                 return await super().get(requirements)
 
@@ -119,7 +119,9 @@ class TestRefused:
         assert "endpoint: required for kind='arc'" in str(exc_info.value)
 
     @pytest.mark.parametrize(
-        "credentials", [None, CredentialSet()], ids=["none", "set-not-provider"]
+        "credentials",
+        [None, BearerToken(value="t")],
+        ids=["none", "credential-not-provider"],
     )
     def test_credentials_must_be_a_provider(self, composed: None, credentials: Any):
         with pytest.raises(ConfigurationError, match="must be a CredentialProvider"):
