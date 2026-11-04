@@ -156,11 +156,6 @@ class FakeCondor:
             for path in submission.rglob("*"):
                 if path.is_file():
                     self._record(call, path)
-            proxy = re.search(
-                r"^x509userproxy = (.*)$", Path(call.argv[-1]).read_text(), re.M
-            )
-            if proxy:
-                self._record(call, Path(proxy.group(1)))
 
     @staticmethod
     def _record(call: Call, path: Path) -> None:

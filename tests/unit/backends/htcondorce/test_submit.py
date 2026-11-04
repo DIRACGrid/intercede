@@ -1,8 +1,7 @@
-"""The HTCondor-CE backend: submit descriptions, outputs, containers and proxies."""
+"""The HTCondor-CE backend: submit descriptions, outputs and containers."""
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -20,7 +19,7 @@ from intercede import (
 )
 from intercede._backends.batch.protocols import CommandResult
 from intercede._backends.monolith.htcondorce import HTCondorCEBackend
-from intercede.auth import BearerToken, StaticCredentials, X509Proxy
+from intercede.auth import BearerToken, StaticCredentials
 
 from ._fake_condor import SPEC, TOKEN, FakeCondor, make, settings
 
@@ -310,26 +309,3 @@ class TestContainers:
         ) as backend:
             with pytest.raises(SpecificationRejectedError, match="inside the image"):
                 await backend.submit(spec)
-
-
-class TestProxy:
-    async def test_proxy_rides_in_the_job_without_delegation(
-        self, condor: FakeCondor, workdir: Path
-    ):
-        credentials = [BearerToken(value=TOKEN), X509Proxy(pem=b"PROXY-PEM")]
-        async with make(
-            condor, workdir, credentials=credentials, auth=["token", "proxy"]
-        ) as backend:
-            await backend.submit(SPEC)
-        call = condor.calls[0]
-        proxy = re.search(r"^x509userproxy = (.*)$", condor.descriptions[0], re.M)
-        assert proxy and call.files[proxy.group(1)] == (0o600, b"PROXY-PEM")
-        assert not Path(proxy.group(1)).exists()
-        assert call.env["_CONDOR_DELEGATE_JOB_GSI_CREDENTIALS"] == "false"
-
-    async def test_token_only_has_no_proxy(
-        self, ce: HTCondorCEBackend, condor: FakeCondor
-    ):
-        await ce.submit(SPEC)
-        assert "x509userproxy" not in condor.descriptions[0]
-        assert "_CONDOR_DELEGATE_JOB_GSI_CREDENTIALS" not in condor.calls[0].env
