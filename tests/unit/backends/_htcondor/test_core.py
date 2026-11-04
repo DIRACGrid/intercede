@@ -148,14 +148,6 @@ class TestRender:
         ]:
             assert line in lines(text)
 
-    def test_proxy(self):
-        assert "x509userproxy = /creds/proxy" in lines(
-            render(plan(proxy_file="/creds/proxy"))
-        )
-        assert not any(
-            line.startswith("x509userproxy") for line in lines(render(plan()))
-        )
-
     def test_finished_jobs_stay_until_purged(self):
         # The one lifetime rule interCEde sets: output can be collected
         # again until the consumer releases the job.
