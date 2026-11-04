@@ -1,11 +1,11 @@
 """What a backend asks its credential provider for, when, and what it accepts back.
 
 ``credential_requirements`` turns a configuration into what to ask for. This is
-also the one place freshness is decided. A backend keeps the set it was
+also the one place freshness is decided. A backend keeps the credential it was
 last given, privately, and before each operation calls ``refresh_if_stale``:
-the provider is asked only when that set is missing a required kind or one of
-its credentials is about to expire. Where credentials come from, and how they
-are renewed, stays the consumer's business, inside its provider.
+the provider is asked only when there is none yet or it is about to expire.
+Where credentials come from, and how they are renewed, stays the consumer's
+business, inside its provider.
 """
 
 from __future__ import annotations
@@ -16,10 +16,8 @@ from intercede.auth.models import (
     BearerToken,
     Credential,
     CredentialRequirements,
-    CredentialSet,
     SSHPassword,
     SSHPrivateKey,
-    X509Proxy,
 )
 from intercede.auth.protocols import CredentialProvider
 from intercede.config import (
@@ -34,7 +32,6 @@ from intercede.exceptions import AuthenticationError, InterCEdeError
 # "agent" is absent on purpose: an SSH agent holds the key, so nothing is asked.
 AUTH_KINDS: dict[str, type[Credential]] = {
     "token": BearerToken,
-    "proxy": X509Proxy,
     "key": SSHPrivateKey,
     "password": SSHPassword,
 }
@@ -63,7 +60,7 @@ def credential_requirements(
         # The endpoint is the resource, so a token is minted for this CE's audience.
         return CredentialRequirements(
             resource=config.endpoint,
-            kinds=frozenset(AUTH_KINDS[mode] for mode in config.auth),
+            kind=AUTH_KINDS[config.auth],
             scopes=scopes,
         )
     if isinstance(config, BatchSSHConfig) and config.auth != "agent":
@@ -71,71 +68,63 @@ def credential_requirements(
         # or password by it, and the same host can take different users.
         return CredentialRequirements(
             resource=f"{config.user}@{config.host}:{config.port}",
-            kinds=frozenset({AUTH_KINDS[config.auth]}),
+            kind=AUTH_KINDS[config.auth],
         )
     return None
 
 
 def is_stale(
-    credentials: CredentialSet | None,
+    credential: Credential | None,
     requirements: CredentialRequirements,
     *,
     margin: timedelta = DEFAULT_MARGIN,
     now: datetime | None = None,
 ) -> bool:
-    """Tell whether ``credentials`` cannot serve ``requirements`` for ``margin`` more.
+    """Tell whether ``credential`` cannot serve ``requirements`` for ``margin`` more.
 
     A credential that never expires is never stale.
 
     Args:
-        credentials: The set the backend holds, or None before its first request.
+        credential: The one the backend holds, or None before its first request.
         requirements: What the backend needs for the operation about to run.
-        margin: How long the credentials must stay valid from now.
+        margin: How long the credential must stay valid from now.
         now: The current time; tests pass a fixed one.
 
     Returns:
-        True when there are no credentials yet, when a required kind is
-        missing, or when a required credential expires within ``margin``.
+        True when there is no credential yet, when it is of another kind than
+        required, or when it expires within ``margin``.
     """
-    if credentials is None:
+    if not isinstance(credential, requirements.kind):
         return True
-    moment = now or datetime.now(UTC)
-    for kind in requirements.kinds:
-        credential = credentials.get(kind)
-        if credential is None:
-            return True
-        if (
-            credential.expires_at is not None
-            and credential.expires_at - margin <= moment
-        ):
-            return True
-    return False
+    if credential.expires_at is None:
+        return False
+    return credential.expires_at - margin <= (now or datetime.now(UTC))
 
 
 async def refresh_if_stale(
-    current: CredentialSet | None,
+    current: Credential | None,
     requirements: CredentialRequirements,
     provider: CredentialProvider,
     *,
     margin: timedelta = DEFAULT_MARGIN,
     now: datetime | None = None,
-) -> CredentialSet:
-    """Return ``current`` while it is fresh, otherwise a new set from ``provider``.
+) -> Credential:
+    """Return ``current`` while it is fresh, otherwise a new one from ``provider``.
 
     Args:
-        current: The set the backend holds, or None before its first request.
+        current: The credential the backend holds, or None before its first request.
         requirements: What the backend needs for the operation about to run.
         provider: The consumer's provider, asked only when ``current`` is stale.
-        margin: How long the credentials must stay valid from now.
+        margin: How long the credential must stay valid from now.
         now: The current time; tests pass a fixed one.
 
     Returns:
-        The set to authenticate with: ``current``, or the provider's new set.
+        The credential to authenticate with: ``current``, or the provider's new one.
 
     Raises:
-        AuthenticationError: The provider failed, left out a required kind, or
-            returned a credential that has already expired. Always a failure of
-            the whole operation, never a per-job outcome.
+        AuthenticationError: The provider failed, returned something other than
+            the required kind, or returned a credential that has already expired.
+            Always a failure of the whole operation, never a per-job outcome.
     """
     if not is_stale(current, requirements, margin=margin, now=now):
         assert current is not None  # is_stale() is True for None
@@ -153,26 +142,16 @@ async def refresh_if_stale(
             f"with {type(exc).__name__}"
         ) from exc
 
-    if not isinstance(fresh, CredentialSet):
+    if not isinstance(fresh, requirements.kind):
         raise AuthenticationError(
             f"the credential provider returned a {type(fresh).__name__} "
-            f"for {requirements.resource}, not a CredentialSet"
-        )
-    missing = []
-    for kind in requirements.kinds:
-        if fresh.get(kind) is None:
-            missing.append(kind.__name__)
-    if missing:
-        raise AuthenticationError(
-            # Sorted: kinds is a set, whose order changes from run to run.
-            f"the credential provider returned no {', '.join(sorted(missing))} "
-            f"for {requirements.resource}"
+            f"for {requirements.resource}, not a {requirements.kind.__name__}"
         )
     # Expiring within the margin is accepted (it is asked again next time);
     # already expired is not, since it cannot authenticate anything.
     if is_stale(fresh, requirements, margin=timedelta(0), now=now):
         raise AuthenticationError(
-            f"the credential provider returned expired credentials "
+            f"the credential provider returned an expired credential "
             f"for {requirements.resource}"
         )
     return fresh
