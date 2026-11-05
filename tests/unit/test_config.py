@@ -64,9 +64,7 @@ def test_defaults_are_filled_in():
     assert (ssh.port, ssh.auth, ssh.connect_timeout_s) == (22, "key", 30)
     assert ssh.transfer_timeout_s == 3600
     ce = validate_config(CE)
-    assert isinstance(ce, HTCondorCEConfig) and ce.auth == "token"
-    arc = validate_config(ARC)
-    assert isinstance(arc, ARCConfig) and arc.auth == "token"
+    assert isinstance(ce, HTCondorCEConfig) and ce.max_output_files == 10_000
 
 
 def test_a_model_passes_through_unchanged():
@@ -97,6 +95,8 @@ class TestRefused:
         ("data", "field", "where"),
         [
             ({**ARC, "host": "h"}, "host", "kind='arc'"),
+            ({**ARC, "auth": "token"}, "auth", "kind='arc'"),
+            ({**CE, "auth": "proxy"}, "auth", "kind='htcondor-ce'"),
             ({**CLOUD, "queue": "short"}, "queue", "kind='cloud'"),
             (
                 {**LOCAL, "known_hosts": "h k"},
@@ -129,10 +129,6 @@ class TestRefused:
     @pytest.mark.parametrize(
         ("data", "message"),
         [
-            ({**ARC, "auth": "proxy"}, "auth: Input should be 'token'"),
-            ({**CE, "auth": "proxy"}, "auth: Input should be 'token'"),
-            ({**CE, "auth": ["token", "proxy"]}, "auth: Input should be 'token'"),
-            ({**ARC, "auth": "key"}, "auth: Input should be 'token'"),
             ({**SSH, "auth": "token"}, "auth"),
             (
                 {**SSH, "known_hosts": "\n\t "},
@@ -146,10 +142,6 @@ class TestRefused:
             ({**LOCAL, "max_output_files": 0}, "max_output_files"),
         ],
         ids=[
-            "arc-no-proxy",
-            "htcondor-ce-no-proxy",
-            "htcondor-ce-one-credential",
-            "ce-ssh-auth",
             "ssh-ce-auth",
             "no-host-keys",
             "launcher-no-image",

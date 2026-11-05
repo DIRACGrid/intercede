@@ -11,6 +11,7 @@ import pytest
 from intercede import AuthenticationError, InterCEdeError, validate_config
 from intercede._backends.credentials import (
     DEFAULT_MARGIN,
+    CredentialCache,
     credential_requirements,
     is_stale,
     refresh_if_stale,
@@ -143,6 +144,74 @@ class TestProviderFailures:
             await refresh_if_stale(None, TOKEN_ONLY, provider, now=NOW)
 
 
+READ = CredentialRequirements(
+    resource="ce:9619", kind=BearerToken, scopes=frozenset({"compute.read"})
+)
+CREATE = CredentialRequirements(
+    resource="ce:9619", kind=BearerToken, scopes=frozenset({"compute.create"})
+)
+
+
+class PerScope(Recording):
+    """A provider that mints a token named after the scopes it is asked for."""
+
+    def __init__(self, short_lived: CredentialRequirements | None = None) -> None:
+        super().__init__()
+        self.short_lived = short_lived
+
+    async def get(self, requirements: CredentialRequirements) -> BearerToken:
+        self.asked.append(requirements)
+        soon = datetime.now(UTC) + timedelta(minutes=1)
+        return BearerToken(
+            value=",".join(requirements.scopes),
+            expires_at=soon if requirements == self.short_lived else None,
+        )
+
+
+def value(credential: Credential) -> str:
+    assert isinstance(credential, BearerToken)
+    return credential.value.get_secret_value()
+
+
+class TestCredentialCache:
+    async def test_a_token_for_one_scope_is_not_used_for_another(self):
+        cache = CredentialCache(PerScope())
+        assert value(await cache.fresh(READ)) == "compute.read"
+        assert value(await cache.fresh(CREATE)) == "compute.create"
+
+    async def test_the_provider_is_asked_once_per_requirement(self):
+        provider = PerScope()
+        cache = CredentialCache(provider)
+        for requirements in (READ, CREATE, READ, CREATE):
+            await cache.fresh(requirements)
+        assert provider.asked == [READ, CREATE]
+
+    async def test_only_the_credential_about_to_expire_is_asked_for_again(self):
+        provider = PerScope(short_lived=READ)
+        cache = CredentialCache(provider)
+        for requirements in (READ, CREATE, READ, CREATE):
+            await cache.fresh(requirements)
+        assert provider.asked == [READ, CREATE, READ]
+
+    async def test_clearing_forgets_every_credential(self):
+        provider = PerScope()
+        cache = CredentialCache(provider)
+        await cache.fresh(READ)
+        cache.clear()
+        await cache.fresh(READ)
+        assert provider.asked == [READ, READ]
+
+    async def test_a_provider_failure_is_an_authentication_error(self):
+        cache = CredentialCache(Recording(error=RuntimeError("s3cret-url")))
+        with pytest.raises(AuthenticationError):
+            await cache.fresh(READ)
+
+    async def test_a_secret_never_shows(self):
+        cache = CredentialCache(PerScope())
+        await cache.fresh(READ)
+        assert "compute.read" not in repr(cache)
+
+
 # --------------------------------------------------------------------------
 # From a configuration to what to ask the provider for
 # --------------------------------------------------------------------------
@@ -161,14 +230,9 @@ SSH: dict[str, Any] = {
 
 class TestCredentialRequirements:
     @pytest.mark.parametrize("base", [ARC, CE], ids=["arc", "htcondor-ce"])
-    @pytest.mark.parametrize("auth", [{}, {"auth": "token"}], ids=["default", "named"])
-    def test_a_ce_asks_for_a_token_for_its_endpoint(
-        self, base: dict[str, Any], auth: dict[str, Any]
-    ):
+    def test_a_ce_asks_for_a_token_for_its_endpoint(self, base: dict[str, Any]):
         scopes = frozenset({"compute.create"})
-        requirements = credential_requirements(
-            validate_config({**base, **auth}), scopes
-        )
+        requirements = credential_requirements(validate_config(base), scopes)
         assert requirements is not None
         assert requirements.kind is BearerToken
         assert requirements.resource == base["endpoint"]

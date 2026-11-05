@@ -1,11 +1,11 @@
 """What a backend asks its credential provider for, when, and what it accepts back.
 
 ``credential_requirements`` turns a configuration into what to ask for. This is
-also the one place freshness is decided. A backend keeps the credential it was
-last given, privately, and before each operation calls ``refresh_if_stale``:
-the provider is asked only when there is none yet or it is about to expire.
-Where credentials come from, and how they are renewed, stays the consumer's
-business, inside its provider.
+also the one place freshness is decided. A backend holds a ``CredentialCache``,
+and before each operation asks it for that operation's credential: the provider
+is asked only when there is none yet or it is about to expire. Where credentials
+come from, and how they are renewed, stays the consumer's business, inside its
+provider.
 """
 
 from __future__ import annotations
@@ -28,10 +28,9 @@ from intercede.config import (
 )
 from intercede.exceptions import AuthenticationError, InterCEdeError
 
-# What each configured auth mode asks the credential provider for.
+# What each configured SSH auth mode asks the credential provider for.
 # "agent" is absent on purpose: an SSH agent holds the key, so nothing is asked.
 AUTH_KINDS: dict[str, type[Credential]] = {
-    "token": BearerToken,
     "key": SSHPrivateKey,
     "password": SSHPassword,
 }
@@ -60,7 +59,7 @@ def credential_requirements(
         # The endpoint is the resource, so a token is minted for this CE's audience.
         return CredentialRequirements(
             resource=config.endpoint,
-            kind=AUTH_KINDS[config.auth],
+            kind=BearerToken,
             scopes=scopes,
         )
     if isinstance(config, BatchSSHConfig) and config.auth != "agent":
@@ -82,7 +81,9 @@ def is_stale(
 ) -> bool:
     """Tell whether ``credential`` cannot serve ``requirements`` for ``margin`` more.
 
-    A credential that never expires is never stale.
+    A credential that never expires is never stale. Only the kind and the expiry
+    are checked, not the scopes, since a token is opaque to interCEde: ``credential``
+    must have been given for these same requirements, as ``CredentialCache`` ensures.
 
     Args:
         credential: The one the backend holds, or None before its first request.
@@ -155,3 +156,37 @@ async def refresh_if_stale(
             f"for {requirements.resource}"
         )
     return fresh
+
+
+class CredentialCache:
+    """Keeps one credential per requirements for one backend, so each scope gets its own token.
+
+    The provider is asked again only when that credential is missing or about to expire.
+    """
+
+    def __init__(self, provider: CredentialProvider) -> None:
+        self._provider = provider
+        self._held: dict[CredentialRequirements, Credential] = {}
+
+    async def fresh(self, requirements: CredentialRequirements) -> Credential:
+        """Return the credential for these requirements, asking the provider if needed.
+
+        Args:
+            requirements: What the backend needs for the operation about to run.
+
+        Returns:
+            The credential to authenticate with.
+
+        Raises:
+            AuthenticationError: The provider failed, returned something other than
+                the required kind, or returned a credential that has already expired.
+        """
+        credential = await refresh_if_stale(
+            self._held.get(requirements), requirements, self._provider
+        )
+        self._held[requirements] = credential
+        return credential
+
+    def clear(self) -> None:
+        """Forget every credential, as a backend does when it closes."""
+        self._held.clear()
