@@ -101,9 +101,6 @@ class ARCConfig(_QueueConfig):
     endpoint: str
     """The CE's REST endpoint, e.g. ``"https://arc.example.org:443/arex"``."""
 
-    auth: Literal["token"] = "token"
-    """Which credential the provider must supply: a token for the channel."""
-
 
 class HTCondorCEConfig(_QueueConfig):
     """An HTCondor-CE."""
@@ -113,9 +110,6 @@ class HTCondorCEConfig(_QueueConfig):
 
     endpoint: str
     """The CE's collector, as ``"host"`` or ``"host:port"``, e.g. ``"ce.example.org:9619"``."""
-
-    auth: Literal["token"] = "token"
-    """Which credential the provider must supply: a token for the channel."""
 
 
 # -- a cloud provider that boots one VM per job --------------------------------
