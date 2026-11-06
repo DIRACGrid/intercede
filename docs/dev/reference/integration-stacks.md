@@ -44,6 +44,7 @@ tests/integration/
 | `versions` | no | Backend versions to test, for example `[lts, latest]`. Default: `[latest]`. |
 | `markers` | yes | `pytest -m` expression that selects the tests for this stack. |
 | `exec_in_container` | no | `true`: run pytest inside the backend container. Default: `false`. |
+| `workers` | no | How many tests run at the same time (pytest-xdist). Default: `4`. Set `1` for a backend that cannot take several jobs at once. |
 
 ## When a stack gets CI jobs
 

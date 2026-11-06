@@ -1,0 +1,22 @@
+# Client half of the `basic` configuration. See docs/dev/reference/integration-stacks.md
+# Changes together with ce.conf, the backend half (rule 7).
+
+[stack]
+id = "htcondor" # this stack's id in stacks.yml
+
+[backend]
+kind = "htcondor-ce"
+# The CE, published on the host (compose.yml) and advertised under this address (ce.conf).
+endpoint = "127.0.0.1:9619"
+# The CE's schedd name, as set in ce.conf. A `name@host` name: HTCondor tools reject a plain
+# name the host cannot resolve, such as the container's hostname.
+schedd = "htcondor-ce@backend"
+# No `queue`: an HTCondor pool has no queues, and the CE routes every job to it.
+
+[credentials]
+type = "token"                  # an ID token for submituser@users.htcondor.org (IDTOKENS)
+path = "credentials/htcondor/"  # holds `token`, minted at every container start
+
+[refusals]
+# What this backend cannot honour; the shared suite checks it is refused at submit.
+containers = true # no container_launcher configured above
