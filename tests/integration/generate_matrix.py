@@ -19,6 +19,10 @@ STACKS_FILE = Path(__file__).parent / "stacks.yml"
 STACKS_DIR = Path(__file__).parent / "stacks"
 
 REQUIRED_KEYS = ("id", "configs", "markers")
+# pytest-xdist workers per job. The tests are independent and every backend
+# queues concurrent jobs, so they run side by side; a stack whose backend
+# cannot take concurrent jobs sets `workers: 1`.
+DEFAULT_WORKERS = 4
 
 
 def load_manifest() -> list[dict[str, Any]]:
@@ -42,6 +46,16 @@ def is_ready(entry: dict[str, Any]) -> bool:
     ).is_dir()
 
 
+def workers(entry: dict[str, Any]) -> int:
+    """Return how many pytest-xdist workers the stack's tests run with."""
+    value = entry.get("workers", DEFAULT_WORKERS)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise SystemExit(
+            f"stack {entry.get('id')!r}: `workers` must be a whole number >= 1, not {value!r}"
+        )
+    return value
+
+
 def build_matrix(stacks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Expand manifest entries into {stack x config x version} jobs."""
     include = []
@@ -62,6 +76,7 @@ def build_matrix(stacks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                         "version": version,
                         "markers": entry["markers"],
                         "exec_in_container": entry.get("exec_in_container", False),
+                        "workers": workers(entry),
                     }
                 )
     return include

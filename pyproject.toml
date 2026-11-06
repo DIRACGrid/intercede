@@ -51,6 +51,7 @@ markers = [
   "backend_only: restrict a test to the named backend fixture(s)",
   "xfail_backend: strict xfail a test on the named backend fixture(s)",
   # integration suite (selected per stack in tests/integration/stacks.yml)
+  "contract: the shared integration suite, run on every stack whatever its markers",
   "remote: drives a remote CE backend (grid gateway: ARC, HTCondor-CE)",
   "scheduler: drives a Transport x Scheduler composition (BatchBackend)",
   "arc: requires an ARC CE",
@@ -143,6 +144,11 @@ py312 = { features = ["testing", "py312"] }
 py313 = { features = ["testing", "py313"] }
 py314 = { features = ["testing", "py314"] }
 docs = { features = ["docs"], solve-group = "default" }
+
+[tool.pixi.feature.testing.dependencies]
+# The HTCondor tools (condor_submit, condor_q, ...) the htcondor-ce backend runs;
+# the integration suite drives the backend against a real CE with them.
+htcondor-utils = "*"
 
 [tool.pixi.feature.testing.pypi-dependencies]
 intercede = { path = ".", editable = true }

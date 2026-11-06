@@ -1,0 +1,38 @@
+# The `htcondor` stack: an HTCondor-CE in front of a one-machine HTCondor pool.
+# Rules: docs/dev/reference/integration-stacks.md
+# The harness drives the service named `backend`: the CE, on 127.0.0.1:9619.
+services:
+  backend:
+    # Until CI publishes images (#14): ghcr.io/diracgrid/intercede-testenv/htcondor-ce:<version>.
+    # A local name per version, so `latest` and `lts` do not replace each other.
+    image: intercede-testenv/htcondor-ce:${BACKEND_VERSION:-latest}
+    build:
+      context: ../_images/htcondor-ce
+      args:
+        BACKEND_VERSION: ${BACKEND_VERSION:-latest}
+    hostname: backend
+    networks:
+      - stack
+    ports:
+      # Host-run harness: the CE advertises 127.0.0.1:9619 (config/basic/ce.conf), so the
+      # published port must be the same number.
+      - "127.0.0.1:9619:9619"
+    volumes:
+      # bind mount, not a named volume: the host-run harness must read the token
+      - ./credentials:/shared/credentials
+      # backend half of the configuration, next to its intercede-client.toml
+      - ./config/basic/ce.conf:/etc/condor-ce/config.d/99-basic.conf:ro
+    healthcheck:
+      # Ready when the CE's schedd is advertised and the pool has a slot to run jobs on.
+      test:
+        - CMD-SHELL
+        - >-
+          condor_ce_status -schedd -af Name | grep -q . &&
+          condor_status -af Name | grep -q .
+      interval: 5s
+      timeout: 10s
+      retries: 24
+      start_period: 30s
+
+networks:
+  stack: {}
