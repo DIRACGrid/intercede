@@ -138,3 +138,12 @@ async def test_a_secret_named_like_an_input_is_refused(
     clashing = [CopyVars(), CopyVars(secrets={"pilot.cfg": b"s"})]
     with pytest.raises(SpecificationRejectedError, match="pilot.cfg"):
         await backend.submit(spec, clashing)
+
+
+async def test_a_missing_local_input_is_refused(backend: JobBackend, tmp_path: Path):
+    spec = SubmissionSpec(
+        executable="/bin/true",
+        inputs=[FileRef(name="in", source=str(tmp_path / "missing"))],
+    )
+    with pytest.raises(SpecificationRejectedError, match="cannot read"):
+        await backend.submit(spec)

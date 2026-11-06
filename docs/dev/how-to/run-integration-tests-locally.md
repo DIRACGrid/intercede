@@ -16,8 +16,11 @@ CI runs the same commands as below, so you can reproduce any CI job on your mach
 2. Run the tests. Copy `<markers>` from the stack's entry in `stacks.yml`:
 
    ```sh
-   pixi run -e py313 pytest tests/integration -m "<markers>" --stack=<id> --config=basic
+   pixi run -e py313 pytest tests/integration -n 4 -m "<markers>" --stack=<id> --config=basic
    ```
+
+`-n 4` runs four tests at the same time, as CI does. Use the stack's `workers` value from
+`stacks.yml` if it sets one, or leave `-n` out to run one test at a time while debugging.
 
 For stacks with `exec_in_container: true` (the `local-*` stacks), run the tests inside the
 container instead:

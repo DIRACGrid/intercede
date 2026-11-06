@@ -13,11 +13,12 @@ import pytest
 
 from intercede import JobBackend
 from intercede._backends.config import FakeConfig
+from intercede.auth import StaticCredentials
 from intercede.registry import _build
 
 # Built through the registry, so the suite also covers the registry path.
 BACKENDS: dict[str, Callable[[], JobBackend]] = {
-    "fake": lambda: _build(FakeConfig()),
+    "fake": lambda: _build(FakeConfig(), StaticCredentials()),
 }
 
 
