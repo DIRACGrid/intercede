@@ -100,13 +100,23 @@ async def test_kill_reports_per_job(backend: JobBackend):
     assert outcome[theirs].reason
 
 
-async def test_purge_forgets_the_job(backend: JobBackend):
+async def test_purge_releases_the_job(backend: JobBackend, tmp_path: Path):
+    """Purge releases a job's output and remote state.
+
+    Afterwards the job is no longer active and its output cannot be collected.
+    Whether its status is then UNKNOWN or a final state depends on whether the
+    resource still remembers it: a schedd's history does, an in-memory fake
+    does not. Both are within the contract.
+    """
     if not isinstance(backend, Purgeable):
         pytest.skip("backend cannot purge")
     sub = await backend.submit(SPEC)
     handle = sub.handles[0]
     assert (await backend.purge([handle]))[handle].ok
-    assert (await backend.get_status([handle]))[handle] == JobStatus.UNKNOWN
+    status = (await backend.get_status([handle]))[handle]
+    assert status not in (JobStatus.SUBMITTED, JobStatus.WAITING, JobStatus.RUNNING)
+    if isinstance(backend, OutputRetriever):
+        assert not (await backend.get_output([handle], tmp_path))[handle].ok
 
 
 async def test_output_of_an_unknown_job_fails_per_job(
@@ -138,3 +148,12 @@ async def test_a_secret_named_like_an_input_is_refused(
     clashing = [CopyVars(), CopyVars(secrets={"pilot.cfg": b"s"})]
     with pytest.raises(SpecificationRejectedError, match="pilot.cfg"):
         await backend.submit(spec, clashing)
+
+
+async def test_a_missing_local_input_is_refused(backend: JobBackend, tmp_path: Path):
+    spec = SubmissionSpec(
+        executable="/bin/true",
+        inputs=[FileRef(name="in", source=str(tmp_path / "missing"))],
+    )
+    with pytest.raises(SpecificationRejectedError, match="cannot read"):
+        await backend.submit(spec)
