@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from tests.integration.generate_matrix import STACKS_DIR, compose_env, load_manifest
+from tests.integration.generate_matrix import (
+    STACKS_DIR,
+    compose_env,
+    load_manifest,
+    workers,
+)
 
 
 def test_entries_have_required_keys():
@@ -10,6 +15,11 @@ def test_entries_have_required_keys():
         assert "id" in entry, f"manifest entry without an id: {entry}"
         assert entry.get("configs"), f"stack {entry['id']}: `configs` is required"
         assert entry.get("markers"), f"stack {entry['id']}: `markers` is required"
+
+
+def test_workers_are_valid():
+    for entry in load_manifest():
+        workers(entry)  # raises SystemExit on a bad value
 
 
 def test_stack_ids_are_unique():
