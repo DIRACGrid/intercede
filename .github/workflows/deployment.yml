@@ -4,18 +4,14 @@ on:
   push:
     branches:
       - main
-  # Rebuild and publish an existing release tag, for when a publish failed after
-  # release-please had already created the release. Run it from main: the pypi
-  # environment only accepts deployments from main.
+  # Re-publish an existing tag after a failed publish. Run from main (pypi env).
   workflow_dispatch:
     inputs:
       tag:
         description: Existing release tag to publish (e.g. v0.1.0)
         required: true
 
-# One release run at a time, so two quick merges cannot both try to create the
-# same release. Queued runs are not cancelled: one may be waiting on the pypi
-# environment approval.
+# Don't cancel: a queued run may be waiting on pypi approval.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -24,11 +20,7 @@ permissions:
   contents: read
 
 jobs:
-  # Opens/updates the release PR; once that PR is merged, creates the tag and the
-  # GitHub release. It uses the action's default token (the job's GITHUB_TOKEN),
-  # not a stored PAT. Nothing done with that token starts another workflow, so
-  # publishing happens in this workflow, gated on release_created (same layout
-  # as diracx-web).
+  # Tags created with GITHUB_TOKEN trigger no workflows, so publish happens here.
   release-please:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -49,7 +41,6 @@ jobs:
     name: Build distribution 📦
     needs: release-please
     runs-on: ubuntu-latest
-    # !cancelled() lets this run when release-please was skipped (manual run).
     if: >-
       !cancelled() && (
         needs.release-please.outputs.release_created == 'true' ||
@@ -58,7 +49,7 @@ jobs:
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        # Build the release tag itself so hatch-vcs reads the release version.
+        # hatch-vcs needs the tag to compute the version.
         ref: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
         persist-credentials: false
     - name: Set up Python
@@ -82,15 +73,14 @@ jobs:
   publish:
     name: Publish distribution 📦 to PyPI
     needs: build
-    # Without this, a manual run skips publish too: the skipped release-please
-    # job further up the chain would count against it.
+    # A skipped release-please upstream would otherwise skip this job too.
     if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/intercede
     permissions:
-      id-token: write  # IMPORTANT: mandatory for trusted publishing
+      id-token: write  # trusted publishing
     steps:
     - name: Download the distribution packages
       uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
