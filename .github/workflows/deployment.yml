@@ -1,18 +1,44 @@
 name: Publish Python 🐍 distribution 📦 to PyPI
 
-on: push
+on:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
+  # Opens/updates the release PR; once that PR is merged, creates the tag and the
+  # GitHub release. It uses the job's own short-lived token, not a stored PAT.
+  # Nothing done with that token starts another workflow, so publishing happens
+  # in this workflow, gated on release_created (same layout as diracx-web).
+  release-please:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ github.token }}
+          release-type: simple
+
   build:
     name: Build distribution 📦
+    needs: release-please
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')  # only publish to PyPI on tag pushes
+    if: needs.release-please.outputs.release_created == 'true'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
+        # Build the release tag itself so hatch-vcs reads the release version.
+        ref: ${{ needs.release-please.outputs.tag_name }}
         persist-credentials: false
     - name: Set up Python
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
