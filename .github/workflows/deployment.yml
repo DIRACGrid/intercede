@@ -1,19 +1,36 @@
-name: Publish Python 🐍 distribution 📦 to PyPI
+name: Release
 
 on:
   push:
     branches:
       - main
+  # Rebuild and publish an existing release tag, for when a publish failed after
+  # release-please had already created the release. Run it from main: the pypi
+  # environment only accepts deployments from main.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish (e.g. v0.1.0)
+        required: true
+
+# One release run at a time, so two quick merges cannot both try to create the
+# same release. Queued runs are not cancelled: one may be waiting on the pypi
+# environment approval.
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
   # Opens/updates the release PR; once that PR is merged, creates the tag and the
-  # GitHub release. It uses the job's own short-lived token, not a stored PAT.
-  # Nothing done with that token starts another workflow, so publishing happens
-  # in this workflow, gated on release_created (same layout as diracx-web).
+  # GitHub release. It uses the action's default token (the job's GITHUB_TOKEN),
+  # not a stored PAT. Nothing done with that token starts another workflow, so
+  # publishing happens in this workflow, gated on release_created (same layout
+  # as diracx-web).
   release-please:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -26,19 +43,23 @@ jobs:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         with:
-          token: ${{ github.token }}
           release-type: simple
 
   build:
     name: Build distribution 📦
     needs: release-please
     runs-on: ubuntu-latest
-    if: needs.release-please.outputs.release_created == 'true'
+    # !cancelled() lets this run when release-please was skipped (manual run).
+    if: >-
+      !cancelled() && (
+        needs.release-please.outputs.release_created == 'true' ||
+        github.event_name == 'workflow_dispatch'
+      )
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         # Build the release tag itself so hatch-vcs reads the release version.
-        ref: ${{ needs.release-please.outputs.tag_name }}
+        ref: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
         persist-credentials: false
     - name: Set up Python
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -46,13 +67,7 @@ jobs:
         python-version: "3.15"
     - name: Installing dependencies
       run: |
-          python -m pip install \
-              build \
-              python-dateutil \
-              pytz \
-              readme_renderer[md] \
-              requests \
-              setuptools_scm
+          python -m pip install build "readme_renderer[md]"
     - name: Validate README for PyPI
       run: |
         python -m readme_renderer README.md -o /tmp/README.html
@@ -67,6 +82,9 @@ jobs:
   publish:
     name: Publish distribution 📦 to PyPI
     needs: build
+    # Without this, a manual run skips publish too: the skipped release-please
+    # job further up the chain would count against it.
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
