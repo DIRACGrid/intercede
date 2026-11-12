@@ -34,6 +34,12 @@ repos:
         args: ["--fix", "--show-fixes"]
       - id: ruff-format
 
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.32.0
+    hooks:
+      - id: zizmor
+        args: ["--no-online-audits"]
+
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.19.1
     hooks:
