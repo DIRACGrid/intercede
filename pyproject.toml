@@ -143,6 +143,7 @@ py312 = { features = ["testing", "py312"] }
 py313 = { features = ["testing", "py313"] }
 py314 = { features = ["testing", "py314"] }
 docs = { features = ["docs"], solve-group = "default" }
+gha-lint = { features = ["gha-lint"], no-default-feature = true }
 
 [tool.pixi.feature.testing.pypi-dependencies]
 intercede = { path = ".", editable = true }
@@ -153,6 +154,15 @@ intercede = { path = ".", editable = true }
 pre-commit = "*"
 [tool.pixi.feature.pre-commit.tasks]
 pre-commit = { cmd = "pre-commit", description = "Run pre-commit" }
+
+
+# Features for running GHA lints (same as diracx)
+[tool.pixi.feature.gha-lint.dependencies]
+zizmor = "*"
+pinact = "*"
+[tool.pixi.feature.gha-lint.tasks]
+gha-zizmor = { cmd = "zizmor .", description = "Run Zizmor GHA analysis" }
+gha-pinact = { cmd = "pinact run", description = "Run Pinact GHA versions update" }
 
 
 # Features for building the documentation

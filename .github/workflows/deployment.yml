@@ -22,12 +22,13 @@ permissions:
 jobs:
   # Tags created with GITHUB_TOKEN trigger no workflows, so publish happens here.
   release-please:
+    name: release-please
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      issues: write
-      pull-requests: write
+      contents: write  # release commit, tag and GitHub release
+      issues: write  # release labels
+      pull-requests: write  # open and update the release PR
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}

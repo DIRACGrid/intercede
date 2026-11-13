@@ -17,6 +17,7 @@ permissions:
 
 jobs:
   pre-commit:
+    name: pre-commit
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -58,4 +59,6 @@ jobs:
           cache: false
           environments: ${{ matrix.python-version }}
       - name: Run pytest
-        run: pixi run -e ${{ matrix.python-version }} pytest
+        env:
+          PIXI_ENV: ${{ matrix.python-version }}
+        run: pixi run -e "$PIXI_ENV" pytest
