@@ -11,9 +11,6 @@
     "docker-compose",
     "custom.regex"
   ],
-  "python": {
-    "rangeStrategy": "auto"
-  },
   "ignorePaths": [
     ".pixi/**",
     "**/__pycache__/**",
@@ -24,8 +21,8 @@
     {
       "customType": "regex",
       "description": "Track pinned backend versions in stack image Dockerfiles via `# renovate:`-annotated ARGs. The datasource/depName/versioning ride in the annotation, so a new stack image needs no renovate.json edit.",
-      "fileMatch": [
-        "(^|/)tests/integration/stacks/_images/.+/Dockerfile$"
+      "managerFilePatterns": [
+        "/(^|/)tests/integration/stacks/_images/.+/Dockerfile$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>[^\\s]+?)(?: versioning=(?<versioning>[^\\s]+?))?\\s+ARG [A-Za-z0-9_]+?_VERSION=\"?(?<currentValue>[^\"\\s]+)\"?"
@@ -34,6 +31,13 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "Python rangeStrategy (moved here from the deprecated top-level python option)",
+      "matchCategories": [
+        "python"
+      ],
+      "rangeStrategy": "auto"
+    },
     {
       "description": "Group all Python dependency updates together",
       "matchManagers": [
@@ -47,8 +51,18 @@
       ]
     },
     {
+      "description": "Python version requirements - be conservative",
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "minimumReleaseAge": "30 days"
+    },
+    {
       "description": "Group build dependencies",
-      "matchPackagePatterns": [
+      "matchPackageNames": [
         "hatchling",
         "hatch-vcs"
       ],
@@ -60,8 +74,8 @@
     },
     {
       "description": "Group test dependencies",
-      "matchPackagePatterns": [
-        "pytest.*",
+      "matchPackageNames": [
+        "/^pytest/",
         "ty"
       ],
       "groupName": "Testing dependencies",
