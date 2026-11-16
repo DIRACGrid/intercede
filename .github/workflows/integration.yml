@@ -15,8 +15,14 @@ on:
 permissions:
   contents: read
 
+# A new push to the same PR cancels the previous run.
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   matrix:
+    name: matrix
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.gen.outputs.matrix }}
@@ -54,16 +60,21 @@ jobs:
           # Workaround for https://github.com/prefix-dev/pixi/issues/3762
           sed -i.bak 's@editable = true@editable = false@g' pyproject.toml
           rm pyproject.toml.bak
-      - uses: prefix-dev/setup-pixi@ad1da6449d9e506fd127fd67ab2d054a769f6a94 # v0.11.2
+      - uses: prefix-dev/setup-pixi@9936258fee697aff89b3fed6ca1f80a382ef694e # v0.11.3
         if: matrix.exec_in_container == false
         with:
-          pixi-version: v0.83.0
+          pixi-version: v0.84.1
           cache: false
           environments: py313
 
       - name: Run the contract suite
+        env:
+          EXEC_IN_CONTAINER: ${{ matrix.exec_in_container }}
+          MARKERS: ${{ matrix.markers }}
+          STACK: ${{ matrix.stack }}
+          CONFIG: ${{ matrix.config }}
         run: |
-          if [ "${{ matrix.exec_in_container }}" = "true" ]; then
+          if [ "$EXEC_IN_CONTAINER" = "true" ]; then
             # TODO(#13/#14): ship the suite in the image and exec as an unprivileged user.
             runner=(docker compose -f "$COMPOSE_FILE" exec -T backend pytest)
           else
@@ -77,7 +88,7 @@ jobs:
           rc=$?
           # Exit 5 = no tests selected; tolerated until the contract suite lands.
           if [ "$rc" -eq 5 ]; then
-            echo "::notice::stack '${{ matrix.stack }}': no tests matched markers '${{ matrix.markers }}' (pytest exit 5) - passing until the contract suite lands"
+            echo "::notice::stack '$STACK': no tests matched markers '$MARKERS' (pytest exit 5) - passing until the contract suite lands"
             rc=0
           fi
           exit "$rc"
