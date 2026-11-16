@@ -1,10 +1,8 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended",
-    "helpers:pinGitHubActionDigests"
+    "local>DIRACGrid/.github//renovate-config"
   ],
-  "minimumReleaseAge": "7 days",
   "enabledManagers": [
     "pip_requirements",
     "pep621",
@@ -13,9 +11,6 @@
     "docker-compose",
     "custom.regex"
   ],
-  "python": {
-    "rangeStrategy": "auto"
-  },
   "ignorePaths": [
     ".pixi/**",
     "**/__pycache__/**",
@@ -26,8 +21,8 @@
     {
       "customType": "regex",
       "description": "Track pinned backend versions in stack image Dockerfiles via `# renovate:`-annotated ARGs. The datasource/depName/versioning ride in the annotation, so a new stack image needs no renovate.json edit.",
-      "fileMatch": [
-        "(^|/)tests/integration/stacks/_images/.+/Dockerfile$"
+      "managerFilePatterns": [
+        "/(^|/)tests/integration/stacks/_images/.+/Dockerfile$/"
       ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>[^\\s]+?)(?: versioning=(?<versioning>[^\\s]+?))?\\s+ARG [A-Za-z0-9_]+?_VERSION=\"?(?<currentValue>[^\"\\s]+)\"?"
@@ -37,10 +32,11 @@
   ],
   "packageRules": [
     {
-      "description": "Group all GitHub Actions updates together",
-      "matchManagers": ["github-actions"],
-      "groupName": "GitHub Actions",
-      "labels": ["dependencies", "github-actions"]
+      "description": "Python rangeStrategy (moved here from the deprecated top-level python option)",
+      "matchCategories": [
+        "python"
+      ],
+      "rangeStrategy": "auto"
     },
     {
       "description": "Group all Python dependency updates together",
@@ -49,58 +45,95 @@
         "pep621"
       ],
       "groupName": "Python dependencies",
-      "labels": ["dependencies", "python"]
-    },
-    {
-      "description": "Handle major version updates separately",
-      "matchUpdateTypes": ["major"],
-      "groupName": "Major version updates",
-      "labels": ["breaking-change"],
-      "automerge": false
-    },
-    {
-      "description": "Handle minor and patch updates together",
-      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "automerge": false
+      "labels": [
+        "dependencies",
+        "python"
+      ]
     },
     {
       "description": "Python version requirements - be conservative",
-      "matchDatasources": ["pypi"],
-      "matchUpdateTypes": ["major"],
+      "matchDatasources": [
+        "pypi"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
       "minimumReleaseAge": "30 days"
     },
     {
       "description": "Group build dependencies",
-      "matchPackagePatterns": ["hatchling", "hatch-vcs"],
+      "matchPackageNames": [
+        "hatchling",
+        "hatch-vcs"
+      ],
       "groupName": "Build dependencies",
-      "labels": ["dependencies", "build"]
+      "labels": [
+        "dependencies",
+        "build"
+      ]
     },
     {
       "description": "Group test dependencies",
-      "matchPackagePatterns": ["pytest.*", "ty"],
+      "matchPackageNames": [
+        "/^pytest/",
+        "ty"
+      ],
       "groupName": "Testing dependencies",
-      "labels": ["dependencies", "testing"]
+      "labels": [
+        "dependencies",
+        "testing"
+      ]
     },
     {
       "description": "Group ARC backend bumps, never mixed with other backends so a red PR names its culprit. Renovate tracks the leading-edge ARG; anchors are human-managed.",
-      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
-      "matchPackageNames": ["/nordugrid-arc/"],
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose",
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "/nordugrid-arc/"
+      ],
       "groupName": "ARC backend (integration stack)",
-      "labels": ["dependencies", "integration-stack", "arc"]
+      "labels": [
+        "dependencies",
+        "integration-stack",
+        "arc"
+      ]
     },
     {
       "description": "Group HTCondor / HTCondor-CE backend bumps",
-      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
-      "matchPackageNames": ["/htcondor/"],
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose",
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "/htcondor/"
+      ],
       "groupName": "HTCondor backend (integration stack)",
-      "labels": ["dependencies", "integration-stack", "htcondor"]
+      "labels": [
+        "dependencies",
+        "integration-stack",
+        "htcondor"
+      ]
     },
     {
       "description": "Group Slurm backend bumps",
-      "matchManagers": ["dockerfile", "docker-compose", "custom.regex"],
-      "matchPackageNames": ["/slurm/"],
+      "matchManagers": [
+        "dockerfile",
+        "docker-compose",
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "/slurm/"
+      ],
       "groupName": "Slurm backend (integration stack)",
-      "labels": ["dependencies", "integration-stack", "slurm"]
+      "labels": [
+        "dependencies",
+        "integration-stack",
+        "slurm"
+      ]
     }
   ]
 }
