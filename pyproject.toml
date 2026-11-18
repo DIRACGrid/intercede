@@ -134,6 +134,9 @@ profile = "black"
 [tool.pixi.workspace]
 channels = ["conda-forge"]
 platforms = ["linux-64", "osx-arm64"]
+# the shared Renovate preset enables lock file maintenance, which skips
+# minimumReleaseAge: enforce the release-age cooldown at solve time
+exclude-newer = "7d"
 
 [tool.pixi.environments]
 default = { features = [], solve-group = "default" }
