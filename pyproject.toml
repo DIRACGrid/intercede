@@ -184,13 +184,13 @@ unit-test = { cmd = "pytest -v", description = "Run the unit tests" }
 
 
 [tool.pixi.feature.py311.dependencies]
-python = "3.11.*"
+python = "3.15.*"
 
 [tool.pixi.feature.py312.dependencies]
-python = "3.12.*"
+python = "3.15.*"
 
 [tool.pixi.feature.py313.dependencies]
-python = "3.13.*"
+python = "3.15.*"
 
 [tool.pixi.feature.py314.dependencies]
-python = "3.14.*"
+python = "3.15.*"
