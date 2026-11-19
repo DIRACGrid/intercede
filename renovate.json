@@ -3,14 +3,6 @@
   "extends": [
     "local>DIRACGrid/.github//renovate-config"
   ],
-  "enabledManagers": [
-    "pip_requirements",
-    "pep621",
-    "github-actions",
-    "dockerfile",
-    "docker-compose",
-    "custom.regex"
-  ],
   "ignorePaths": [
     ".pixi/**",
     "**/__pycache__/**",
