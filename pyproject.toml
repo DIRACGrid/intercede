@@ -194,3 +194,6 @@ python = "3.13.*"
 
 [tool.pixi.feature.py314.dependencies]
 python = "3.14.*"
+
+[tool.bandit]
+exclude_dirs = [".github", "docs", "test", "tests"]

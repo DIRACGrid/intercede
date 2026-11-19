@@ -46,3 +46,10 @@ repos:
       - id: mypy
         exclude: tests
         additional_dependencies: ["pydantic>=2.0.0"]
+
+  # static security analysis
+  - repo: https://github.com/PyCQA/bandit
+    rev: '1.9.4'
+    hooks:
+    - id: bandit
+      args: ["-q", "-c", "pyproject.toml"]
