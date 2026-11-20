@@ -9,5 +9,5 @@ endpoint = "CHANGEME" # e.g. "https://localhost:443/arex" or "localhost:2222"
 queue = "CHANGEME"
 
 [credentials]
-type = "CHANGEME"              # token | proxy | ssh-key
+type = "CHANGEME"              # token | ssh-key
 path = "credentials/CHANGEME/" # under the ./credentials bind mount
