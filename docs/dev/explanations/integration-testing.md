@@ -35,3 +35,14 @@ when the backend does not have it. A test asks for a capability by taking its fi
   tests of its own: its stack runs this suite. Behaviour that only one backend has (for example
   HTCondor's one-time output download) gets its own test and marker (`destructive_fetch`), not an
   `if` inside a shared test.
+
+## What the unit tests of a backend are for
+
+Normal behaviour is tested once, in the shared suite, so a new or changed backend needs no tests
+tied to how it is built. A shared test that needs to see what a job received checks it in the job
+itself, and fails the job when it is wrong: a backend that cannot collect output still runs it.
+
+A backend's unit tests cover only what a healthy stack does not show: states it never reaches (a
+held job, a purged one), refusals, partial failures, a CE that answers something unreadable,
+limits, and security properties. They go through the backend's public operations, against a
+simulated service, never through its internal modules.
