@@ -64,7 +64,12 @@ def test_defaults_are_filled_in():
     assert (ssh.port, ssh.auth, ssh.connect_timeout_s) == (22, "key", 30)
     assert ssh.transfer_timeout_s == 3600
     ce = validate_config(CE)
-    assert isinstance(ce, HTCondorCEConfig) and ce.auth == {"token"}
+    assert isinstance(ce, HTCondorCEConfig) and ce.max_output_files == 10_000
+
+
+def test_an_htcondor_ce_can_name_its_schedd():
+    ce = validate_config({**CE, "schedd": "ce01@ce.example.org"})
+    assert isinstance(ce, HTCondorCEConfig) and ce.schedd == "ce01@ce.example.org"
 
 
 def test_a_model_passes_through_unchanged():
@@ -95,6 +100,8 @@ class TestRefused:
         ("data", "field", "where"),
         [
             ({**ARC, "host": "h"}, "host", "kind='arc'"),
+            ({**ARC, "auth": "token"}, "auth", "kind='arc'"),
+            ({**CE, "auth": "proxy"}, "auth", "kind='htcondor-ce'"),
             ({**CLOUD, "queue": "short"}, "queue", "kind='cloud'"),
             (
                 {**LOCAL, "known_hosts": "h k"},
@@ -127,9 +134,6 @@ class TestRefused:
     @pytest.mark.parametrize(
         ("data", "message"),
         [
-            ({**ARC, "auth": []}, "auth must name at least one"),
-            ({**CE, "auth": ["proxy"]}, "must include 'token'"),
-            ({**ARC, "auth": ["key"]}, "auth"),
             ({**SSH, "auth": "token"}, "auth"),
             (
                 {**SSH, "known_hosts": "\n\t "},
@@ -139,14 +143,15 @@ class TestRefused:
                 {**LOCAL, "container_launcher": ["apptainer", "exec"]},
                 "'{image}' placeholder",
             ),
+            ({**CE, "endpoint": "https://ce.example.org"}, "endpoint must be 'host'"),
+            ({**CE, "schedd": "-name evil"}, "schedd must be 'host' or 'name@host'"),
             ({**CLOUD, "driver_options": {"OS_PASSWORD": "x"}}, "credential provider"),
             ({**LOCAL, "max_output_files": 0}, "max_output_files"),
         ],
         ids=[
-            "arc-no-auth",
-            "htcondor-ce-no-token",
-            "ce-ssh-auth",
             "ssh-ce-auth",
+            "ce-endpoint-url",
+            "ce-schedd-option",
             "no-host-keys",
             "launcher-no-image",
             "secret-driver-option",
@@ -167,6 +172,9 @@ class TestNeverRepeatsAValue:
 
     def test_a_wrong_value(self):
         assert "toto4" not in rejected(**SSH, port="toto4")
+
+    def test_a_value_that_breaks_a_rule(self):
+        assert "toto4" not in rejected(**{**CE, "endpoint": "https://toto4"})
 
     def test_building_a_model_directly(self):
         with pytest.raises(ValueError) as exc_info:
