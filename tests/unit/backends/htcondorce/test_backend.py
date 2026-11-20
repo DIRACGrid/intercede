@@ -8,6 +8,7 @@ failures, and answers a CE gives when something is wrong.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -308,3 +309,141 @@ class TestKillAndPurge:
             outcomes[sub.handles[1]].reason
             == "condor_rm failed: Couldn't find/remove all jobs"
         )
+
+    async def test_a_job_removed_but_still_queued_is_already_released(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        # condor_rm returns before the schedd drops the job from the queue.
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id, code=3, LastJobStatus=4)
+        condor.calls.clear()
+        output = (await ce.get_output([h], tmp_path))[h]
+        assert (
+            not output.ok and output.reason == "the job was purged; its output is gone"
+        )
+        again = (await ce.purge([h]))[h]
+        assert again.ok and again.reason == "already released"
+        assert "condor_transfer_data" not in condor.tools()
+        assert "condor_rm" not in condor.tools()
+
+
+class TestOutput:
+    @pytest.mark.parametrize(
+        "iwd", ["/etc", "relative/dir", "{workdir}", "{workdir}/../escape"]
+    )
+    async def test_the_ce_cannot_choose_where_we_write(
+        self,
+        ce: HTCondorCEBackend,
+        condor: FakeCondor,
+        workdir: Path,
+        tmp_path: Path,
+        iwd: str,
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id, SUBMIT_Iwd=iwd.format(workdir=workdir))
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok
+        assert (
+            outcome.reason == "the job's output directory is outside our working area"
+        )
+        assert "condor_transfer_data" not in condor.tools()
+
+    async def test_links_are_refused(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id)
+        real = condor._transfer
+
+        def with_link(ids: list[str]) -> CommandResult:
+            result = real(ids)
+            (Path(condor.queue[h.id]["SUBMIT_Iwd"]) / "link").symlink_to("/etc/passwd")
+            return result
+
+        condor._transfer = with_link  # type: ignore[method-assign]
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok and "link" in (outcome.reason or "")
+
+    @pytest.mark.parametrize(
+        ("limits", "files", "reason"),
+        [
+            ({"max_output_files": 3}, {"a": b"", "b": b""}, "more than 3 output files"),
+            (
+                {"max_output_bytes": 10},
+                {"big": b"x" * 100},
+                "output larger than 10 bytes",
+            ),
+        ],
+        ids=["files", "bytes"],
+    )
+    async def test_limits(
+        self,
+        condor: FakeCondor,
+        workdir: Path,
+        tmp_path: Path,
+        limits: dict[str, int],
+        files: dict[str, bytes],
+        reason: str,
+    ):
+        async with make(condor, workdir, **limits) as backend:
+            h = (await backend.submit(SPEC)).handles[0]
+            condor.finish(h.id)
+            condor.outputs[h.id] = files  # besides stdout, stderr and the log
+            outcome = (await backend.get_output([h], tmp_path))[h]
+        assert not outcome.ok and outcome.reason == reason
+
+    async def test_a_transfer_that_fails_is_that_jobs_failure(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id)
+        condor.fail["condor_transfer_data"] = CommandResult(
+            returncode=1, stdout="", stderr="ERROR: spool gone"
+        )
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok
+        assert outcome.reason == "condor_transfer_data failed: ERROR: spool gone"
+
+    async def test_a_transfer_that_writes_nothing(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id)
+        condor._transfer = lambda ids: ok("Fetching data files...\n")  # type: ignore[method-assign]
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok
+        assert outcome.reason == "condor_transfer_data returned no files"
+
+    async def test_one_job_collected_twice_at_once(
+        self, condor: FakeCondor, workdir: Path, tmp_path: Path
+    ):
+        transfers: list[str] = []  # "start" / "end", to see whether they overlap
+
+        async def slow_transfer(
+            argv: Sequence[str], env: Mapping[str, str], timeout: float
+        ) -> CommandResult:
+            if argv[0] != "condor_transfer_data":
+                return await condor(argv, env, timeout)
+            transfers.append("start")
+            await asyncio.sleep(0.05)  # the second collection arrives meanwhile
+            result = await condor(argv, env, timeout)
+            transfers.append("end")
+            return result
+
+        provider = StaticCredentials([BearerToken(value=TOKEN)])
+        backend = HTCondorCEBackend(
+            settings(), provider, runner=slow_transfer, workdir=workdir
+        )
+        async with backend:
+            h = (await backend.submit(SPEC)).handles[0]
+            condor.finish(h.id)
+            condor.outputs[h.id] = {"result.txt": b"42"}
+            first, second = await asyncio.gather(
+                backend.get_output([h], tmp_path / "a"),
+                backend.get_output([h], tmp_path / "b"),
+            )
+        # Both succeed, one after the other: never two transfers into one directory.
+        assert transfers == ["start", "end", "start", "end"]
+        for outcome in (first[h], second[h]):
+            assert outcome.ok and outcome.value is not None
+            assert outcome.value.files["result.txt"].read_bytes() == b"42"
