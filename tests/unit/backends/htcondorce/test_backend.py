@@ -1,0 +1,449 @@
+"""The HTCondor-CE backend: what the shared suite cannot show on a healthy stack.
+
+Normal behaviour is the shared integration suite's, on the htcondor stack. These
+tests drive the backend through its public operations, against simulated tools,
+for what a stack does not produce: states it never reaches, refusals, partial
+failures, and answers a CE gives when something is wrong.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from intercede import (
+    AuthenticationError,
+    ConfigurationError,
+    ContainerSpec,
+    CopyVars,
+    FileRef,
+    JobStatus,
+    OutputMember,
+    OutputSpec,
+    ResourceUnavailableError,
+    SpecificationRejectedError,
+)
+from intercede._backends.batch.protocols import CommandResult
+from intercede._backends.monolith.htcondorce import HTCondorCEBackend
+from intercede.auth import BearerToken, StaticCredentials
+
+from ._fake_condor import SPEC, TOKEN, FakeCondor, handle, make, ok, settings
+
+
+class TestStatus:
+    @pytest.mark.parametrize(
+        ("code", "fields", "expected"),
+        [
+            (1, {}, JobStatus.WAITING),
+            (2, {}, JobStatus.RUNNING),
+            (6, {}, JobStatus.RUNNING),  # transferring output
+            (7, {}, JobStatus.WAITING),  # suspended
+            (8, {}, JobStatus.UNKNOWN),
+            (4, {"ExitCode": 0}, JobStatus.DONE),
+            (4, {"ExitCode": 3}, JobStatus.FAILED),
+            (4, {"ExitBySignal": True, "ExitSignal": 9}, JobStatus.FAILED),
+            (5, {"HoldReasonCode": 16}, JobStatus.WAITING),  # inputs still spooling
+            (5, {"HoldReasonCode": 3}, JobStatus.ABORTED),
+            (3, {"LastJobStatus": 4, "ExitCode": 0}, JobStatus.DONE),  # purged
+            (3, {"LastJobStatus": 4, "ExitCode": 2}, JobStatus.FAILED),
+            (3, {"LastJobStatus": 2}, JobStatus.ABORTED),  # killed while running
+        ],
+        ids=[
+            "idle",
+            "running",
+            "transferring",
+            "suspended",
+            "unexpected",
+            "exit-0",
+            "exit-3",
+            "signal",
+            "spooling",
+            "held",
+            "purged-done",
+            "purged-failed",
+            "killed",
+        ],
+    )
+    async def test_the_states_the_ce_reports(
+        self,
+        ce: HTCondorCEBackend,
+        condor: FakeCondor,
+        code: int,
+        fields: dict[str, Any],
+        expected: JobStatus,
+    ):
+        job = (await ce.submit(SPEC)).handles[0]
+        condor.finish(job.id, code, **fields)
+        assert await ce.get_status([job]) == {job: expected}
+
+    @pytest.mark.parametrize(
+        "foreign",
+        [
+            {"resource": "other.example.org:9619"},
+            {"backend": "arc"},
+            {"id": "-constraint true"},
+            {"id": "1"},
+            {"id": "1.0 1.1"},
+        ],
+        ids=["other-ce", "other-backend", "option-injection", "no-proc", "two-ids"],
+    )
+    async def test_foreign_and_malformed_handles_never_reach_a_command(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, foreign: dict[str, str]
+    ):
+        bad = handle("1.0", **foreign)
+        assert await ce.get_status([bad]) == {bad: JobStatus.UNKNOWN}
+        assert condor.calls == []
+
+
+class TestSubmit:
+    @pytest.mark.parametrize(
+        "fields",
+        [
+            {"inputs": [FileRef(name="renamed.dat", source="https://example.org/in")]},
+            {"outputs": OutputSpec(members=[OutputMember(pattern="*.root")])},
+            {
+                "outputs": OutputSpec(
+                    members=[OutputMember(pattern="*.root", destination="https://se/")],
+                    include_unlisted=True,
+                )
+            },
+            {"container": ContainerSpec(image="docker://alpine")},
+        ],
+        ids=["url-input-renamed", "pattern", "pattern-uploaded", "no-launcher"],
+    )
+    async def test_refused_before_any_call(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, fields: dict[str, Any]
+    ):
+        with pytest.raises(SpecificationRejectedError):
+            await ce.submit(SPEC.model_copy(update=fields))
+        assert "condor_submit" not in condor.tools()
+
+    async def test_a_value_refused_in_a_later_cluster_submits_nothing(
+        self, ce: HTCondorCEBackend, condor: FakeCondor
+    ):
+        # Different variable names go in different clusters.
+        copies = [CopyVars(environment={"A": "1"}), CopyVars(environment={"B": "a\nb"})]
+        with pytest.raises(SpecificationRejectedError, match="line break"):
+            await ce.submit(SPEC, copies)
+        assert "condor_submit" not in condor.tools()
+
+    async def test_a_later_cluster_failing_keeps_the_submitted_copies(
+        self, condor: FakeCondor, workdir: Path
+    ):
+        copies = [CopyVars(environment={"A": "1"}), CopyVars(environment={"B": "2"})]
+        submitted = 0
+
+        async def second_submit_fails(
+            argv: Sequence[str], env: Mapping[str, str], timeout: float
+        ) -> CommandResult:
+            nonlocal submitted
+            if argv[0] == "condor_submit":
+                submitted += 1
+                if submitted == 2:
+                    return CommandResult(
+                        returncode=1, stdout="", stderr="ERROR: schedd full"
+                    )
+            return await condor(argv, env, timeout)
+
+        backend = HTCondorCEBackend(
+            settings(),
+            StaticCredentials([BearerToken(value=TOKEN)]),
+            runner=second_submit_fails,
+            workdir=workdir,
+        )
+        async with backend:
+            sub = await backend.submit(SPEC, copies)
+        assert sorted(sub.handles) == [0]
+        assert sub.failures == {1: "condor_submit failed: ERROR: schedd full"}
+
+    async def test_secrets_and_the_token_exist_only_privately_during_the_call(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, workdir: Path
+    ):
+        copies = [
+            CopyVars(secrets={"pilot.secret": b"TOPSECRET-0"}),
+            CopyVars(secrets={"pilot.secret": b"TOPSECRET-1"}),
+        ]
+        await ce.submit(SPEC, copies)
+        call = condor.calls[0]
+        secrets = [entry for path, entry in call.files.items() if "pilot" in path]
+        assert sorted(secrets) == [(0o600, b"TOPSECRET-0"), (0o600, b"TOPSECRET-1")]
+        assert "TOPSECRET" not in condor.descriptions[0]
+        token = call.env["_CONDOR_SCITOKENS_FILE"]
+        assert call.files[token] == (0o600, TOKEN.encode())
+        assert not Path(token).exists()
+        assert not [p for p in workdir.rglob("*") if p.is_file()]
+
+    async def test_a_link_in_place_of_the_working_area_is_refused(
+        self, condor: FakeCondor, tmp_path: Path
+    ):
+        target = tmp_path / "elsewhere"
+        target.mkdir()
+        link = tmp_path / "work"
+        link.symlink_to(target)
+        async with make(condor, link) as backend:
+            with pytest.raises(ConfigurationError, match="not a directory owned"):
+                await backend.submit(SPEC)
+
+    async def test_resources_and_the_queue_reach_the_ce(
+        self, condor: FakeCondor, workdir: Path
+    ):
+        resources = SPEC.resources.model_copy(
+            update={"cpus": 4, "memory_mb": 8000, "wall_time_s": 3600}
+        )
+        async with make(condor, workdir, queue="default") as backend:
+            await backend.submit(SPEC.model_copy(update={"resources": resources}))
+            short = resources.model_copy(update={"queue": "short"})
+            await backend.submit(SPEC.model_copy(update={"resources": short}))
+        configured, named = condor.descriptions
+        for line in ["+xcount = 4", "+maxMemory = 8000", "+BatchRuntime = 3600"]:
+            assert line in configured
+        assert '+queue = "default"' in configured
+        assert '+queue = "short"' in named  # the spec's queue wins
+
+
+class TestErrors:
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            "10/21/26 13:52:19 AUTHENTICATE:1003:Failed to authenticate with any method\n"
+            "Error: Couldn't contact the condor_collector",
+            "PERMISSION DENIED to submituser",
+            # condor_submit with a rejected token (HTCondor 25): no AUTHENTICATE
+            # summary, and an error that looks like an unreachable schedd.
+            "10/26/26 11:37:15 AUTHENTICATE: method 2048 (IDTOKENS) failed.\n"
+            "10/26/26 11:37:15 SECMAN: required authentication with collector "
+            "127.0.0.1:9619 failed, so aborting command QUERY_SCHEDD_ADS.\n"
+            "ERROR: Can't find address of schedd htcondor-ce@backend",
+        ],
+        ids=["token-rejected", "permission-denied", "submit-token-rejected"],
+    )
+    async def test_a_refused_token(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, stderr: str
+    ):
+        condor.fail["condor_submit"] = CommandResult(
+            returncode=1, stdout="", stderr=stderr
+        )
+        with pytest.raises(AuthenticationError):
+            await ce.submit(SPEC)
+
+    @pytest.mark.parametrize(
+        "stderr",
+        [
+            "10/21/26 13:52:19 connect errno = 111\n"
+            "Error: Couldn't contact the condor_collector on ce:9619.",
+            "Can't find address for schedd ce.example.org",
+        ],
+        ids=["refused", "no-address"],
+    )
+    async def test_a_ce_that_cannot_be_reached(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, stderr: str
+    ):
+        condor.fail["condor_q"] = CommandResult(returncode=1, stdout="", stderr=stderr)
+        with pytest.raises(ResourceUnavailableError, match="could not be reached"):
+            await ce.get_status([handle("1.0")])
+
+    async def test_nothing_submitted_fails_the_operation(
+        self, ce: HTCondorCEBackend, condor: FakeCondor
+    ):
+        condor.fail["condor_submit"] = CommandResult(
+            returncode=1, stdout="", stderr="ERROR: schedd full"
+        )
+        with pytest.raises(ResourceUnavailableError, match="schedd full"):
+            await ce.submit(SPEC, 2)
+
+    @pytest.mark.parametrize(
+        ("tool", "raw", "copies"),
+        [
+            ("condor_submit", "Submitting job(s).", 1),
+            ("condor_submit", "1.0 - 1.0\n2.0 - 2.0", 1),
+            ("condor_submit", "5.0 - 5.0", 2),  # fewer jobs than copies
+            ("condor_q", "not json", 1),
+        ],
+        ids=["submit-text", "submit-two-clusters", "submit-too-few", "query-text"],
+    )
+    async def test_an_answer_that_cannot_be_read(
+        self,
+        ce: HTCondorCEBackend,
+        condor: FakeCondor,
+        tool: str,
+        raw: str,
+        copies: int,
+    ):
+        condor.fail[tool] = ok(raw)
+        with pytest.raises(ResourceUnavailableError):
+            if tool == "condor_submit":
+                await ce.submit(SPEC, copies)
+            else:
+                await ce.get_status([handle("1.0")])
+
+
+class TestKillAndPurge:
+    async def test_a_job_the_ce_no_longer_knows(self, ce: HTCondorCEBackend):
+        gone = handle("9.0")
+        assert (await ce.kill([gone]))[gone].reason == "unknown job"
+        assert (await ce.purge([gone]))[gone].reason == "unknown job"
+
+    async def test_condor_rm_refusing_one_job(
+        self, ce: HTCondorCEBackend, condor: FakeCondor
+    ):
+        sub = await ce.submit(SPEC, 2)
+        real = condor._remove
+
+        def refuse_second(ids: list[str]) -> CommandResult:
+            result = real(ids[:1])
+            return CommandResult(
+                returncode=1,
+                stdout=result.stdout,
+                stderr="Couldn't find/remove all jobs\n",
+            )
+
+        condor._remove = refuse_second  # type: ignore[method-assign]
+        outcomes = await ce.kill(list(sub.handles.values()))
+        assert outcomes[sub.handles[0]].ok
+        assert not outcomes[sub.handles[1]].ok
+        assert (
+            outcomes[sub.handles[1]].reason
+            == "condor_rm failed: Couldn't find/remove all jobs"
+        )
+
+    async def test_a_job_removed_but_still_queued_is_already_released(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        # condor_rm returns before the schedd drops the job from the queue.
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id, code=3, LastJobStatus=4)
+        condor.calls.clear()
+        output = (await ce.get_output([h], tmp_path))[h]
+        assert (
+            not output.ok and output.reason == "the job was purged; its output is gone"
+        )
+        again = (await ce.purge([h]))[h]
+        assert again.ok and again.reason == "already released"
+        assert "condor_transfer_data" not in condor.tools()
+        assert "condor_rm" not in condor.tools()
+
+
+class TestOutput:
+    @pytest.mark.parametrize(
+        "iwd", ["/etc", "relative/dir", "{workdir}", "{workdir}/../escape"]
+    )
+    async def test_the_ce_cannot_choose_where_we_write(
+        self,
+        ce: HTCondorCEBackend,
+        condor: FakeCondor,
+        workdir: Path,
+        tmp_path: Path,
+        iwd: str,
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id, SUBMIT_Iwd=iwd.format(workdir=workdir))
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok
+        assert (
+            outcome.reason == "the job's output directory is outside our working area"
+        )
+        assert "condor_transfer_data" not in condor.tools()
+
+    async def test_links_are_refused(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id)
+        real = condor._transfer
+
+        def with_link(ids: list[str]) -> CommandResult:
+            result = real(ids)
+            (Path(condor.queue[h.id]["SUBMIT_Iwd"]) / "link").symlink_to("/etc/passwd")
+            return result
+
+        condor._transfer = with_link  # type: ignore[method-assign]
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok and "link" in (outcome.reason or "")
+
+    @pytest.mark.parametrize(
+        ("limits", "files", "reason"),
+        [
+            ({"max_output_files": 3}, {"a": b"", "b": b""}, "more than 3 output files"),
+            (
+                {"max_output_bytes": 10},
+                {"big": b"x" * 100},
+                "output larger than 10 bytes",
+            ),
+        ],
+        ids=["files", "bytes"],
+    )
+    async def test_limits(
+        self,
+        condor: FakeCondor,
+        workdir: Path,
+        tmp_path: Path,
+        limits: dict[str, int],
+        files: dict[str, bytes],
+        reason: str,
+    ):
+        async with make(condor, workdir, **limits) as backend:
+            h = (await backend.submit(SPEC)).handles[0]
+            condor.finish(h.id)
+            condor.outputs[h.id] = files  # besides stdout, stderr and the log
+            outcome = (await backend.get_output([h], tmp_path))[h]
+        assert not outcome.ok and outcome.reason == reason
+
+    async def test_a_transfer_that_fails_is_that_jobs_failure(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id)
+        condor.fail["condor_transfer_data"] = CommandResult(
+            returncode=1, stdout="", stderr="ERROR: spool gone"
+        )
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok
+        assert outcome.reason == "condor_transfer_data failed: ERROR: spool gone"
+
+    async def test_a_transfer_that_writes_nothing(
+        self, ce: HTCondorCEBackend, condor: FakeCondor, tmp_path: Path
+    ):
+        h = (await ce.submit(SPEC)).handles[0]
+        condor.finish(h.id)
+        condor._transfer = lambda ids: ok("Fetching data files...\n")  # type: ignore[method-assign]
+        outcome = (await ce.get_output([h], tmp_path))[h]
+        assert not outcome.ok
+        assert outcome.reason == "condor_transfer_data returned no files"
+
+    async def test_one_job_collected_twice_at_once(
+        self, condor: FakeCondor, workdir: Path, tmp_path: Path
+    ):
+        transfers: list[str] = []  # "start" / "end", to see whether they overlap
+
+        async def slow_transfer(
+            argv: Sequence[str], env: Mapping[str, str], timeout: float
+        ) -> CommandResult:
+            if argv[0] != "condor_transfer_data":
+                return await condor(argv, env, timeout)
+            transfers.append("start")
+            await asyncio.sleep(0.05)  # the second collection arrives meanwhile
+            result = await condor(argv, env, timeout)
+            transfers.append("end")
+            return result
+
+        provider = StaticCredentials([BearerToken(value=TOKEN)])
+        backend = HTCondorCEBackend(
+            settings(), provider, runner=slow_transfer, workdir=workdir
+        )
+        async with backend:
+            h = (await backend.submit(SPEC)).handles[0]
+            condor.finish(h.id)
+            condor.outputs[h.id] = {"result.txt": b"42"}
+            first, second = await asyncio.gather(
+                backend.get_output([h], tmp_path / "a"),
+                backend.get_output([h], tmp_path / "b"),
+            )
+        # Both succeed, one after the other: never two transfers into one directory.
+        assert transfers == ["start", "end", "start", "end"]
+        for outcome in (first[h], second[h]):
+            assert outcome.ok and outcome.value is not None
+            assert outcome.value.files["result.txt"].read_bytes() == b"42"
