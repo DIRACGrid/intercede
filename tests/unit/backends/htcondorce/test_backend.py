@@ -278,3 +278,33 @@ class TestErrors:
                 await ce.submit(SPEC, copies)
             else:
                 await ce.get_status([handle("1.0")])
+
+
+class TestKillAndPurge:
+    async def test_a_job_the_ce_no_longer_knows(self, ce: HTCondorCEBackend):
+        gone = handle("9.0")
+        assert (await ce.kill([gone]))[gone].reason == "unknown job"
+        assert (await ce.purge([gone]))[gone].reason == "unknown job"
+
+    async def test_condor_rm_refusing_one_job(
+        self, ce: HTCondorCEBackend, condor: FakeCondor
+    ):
+        sub = await ce.submit(SPEC, 2)
+        real = condor._remove
+
+        def refuse_second(ids: list[str]) -> CommandResult:
+            result = real(ids[:1])
+            return CommandResult(
+                returncode=1,
+                stdout=result.stdout,
+                stderr="Couldn't find/remove all jobs\n",
+            )
+
+        condor._remove = refuse_second  # type: ignore[method-assign]
+        outcomes = await ce.kill(list(sub.handles.values()))
+        assert outcomes[sub.handles[0]].ok
+        assert not outcomes[sub.handles[1]].ok
+        assert (
+            outcomes[sub.handles[1]].reason
+            == "condor_rm failed: Couldn't find/remove all jobs"
+        )
