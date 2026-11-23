@@ -1,0 +1,80 @@
+name: arc-ce-slurm-integration-test
+
+on:
+  push:
+    branches: [main, add-arc-ce-slurm-ci]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: arc-ce-slurm-test
+  CONTAINER_NAME: arc-ce-slurm-test
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t "${IMAGE_NAME}:local" -f docker/Dockerfile docker/
+
+      # --privileged: this container runs systemd as PID 1 (needed by
+      # arcctl / SLURM's own unit files, and by slurmd's cgroup-scope
+      # setup via dbus-broker), which needs real cgroup access.
+      # GitHub-hosted runners allow this directly - no runner config
+      # or cluster admin approval needed, unlike a locked-down
+      # Kubernetes-executor GitLab runner.
+      - name: Run container
+        run: |
+          docker run -d --privileged --name "${CONTAINER_NAME}" --hostname arc-ce "${IMAGE_NAME}:local"
+
+      - name: Wait for health check
+        run: |
+          status="starting"
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' "${CONTAINER_NAME}" 2>/dev/null || echo "starting")
+            echo "  [$i/60] health=${status}"
+            [ "${status}" = "healthy" ] && break
+            sleep 5
+          done
+          if [ "${status}" != "healthy" ]; then
+            echo "::error::Container never became healthy"
+            docker logs "${CONTAINER_NAME}" || true
+            docker exec "${CONTAINER_NAME}" cat /var/log/arc-bootstrap.log || true
+            exit 1
+          fi
+
+      - name: Run integration test (submit -> monitor -> retrieve)
+        run: |
+          docker cp test/. "${CONTAINER_NAME}:/opt/arc-test/"
+          docker exec "${CONTAINER_NAME}" chown -R griduser01:griduser01 /opt/arc-test
+          docker exec "${CONTAINER_NAME}" chmod +x /opt/arc-test/run_integration_test.sh /opt/arc-test/run.sh
+          docker exec -u griduser01 "${CONTAINER_NAME}" /opt/arc-test/run_integration_test.sh
+
+      - name: Collect logs
+        if: always()
+        run: |
+          docker logs "${CONTAINER_NAME}" > container-console.log 2>&1 || true
+          docker exec "${CONTAINER_NAME}" cat /var/log/arc/arex.log > arex.log 2>/dev/null || true
+          docker exec "${CONTAINER_NAME}" cat /var/log/arc-bootstrap.log > arc-bootstrap.log 2>/dev/null || true
+          docker exec "${CONTAINER_NAME}" cat /var/log/slurm/slurmctld.log > slurmctld.log 2>/dev/null || true
+          docker exec "${CONTAINER_NAME}" cat /var/log/slurm/slurmd.log > slurmd.log 2>/dev/null || true
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arc-ce-slurm-logs
+          path: |
+            container-console.log
+            arex.log
+            arc-bootstrap.log
+            slurmctld.log
+            slurmd.log
+          retention-days: 7
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f "${CONTAINER_NAME}" || true
