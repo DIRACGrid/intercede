@@ -29,8 +29,10 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/DIRACGrid/intercede"
+Homepage = "https://diracgrid.org"
 Repository = "https://github.com/DIRACGrid/intercede"
+Issues = "https://github.com/DIRACGrid/intercede/issues"
+Security = "https://github.com/DIRACGrid/intercede/security/policy"
 
 
 [project.optional-dependencies]
