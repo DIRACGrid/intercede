@@ -1,9 +1,13 @@
 name: Release
 
+# Merging the release PR creates a draft release; a release manager publishing
+# it creates the tag and triggers the build and publish below.
 on:
   push:
     branches:
       - main
+  release:
+    types: [published]
   # Re-publish an existing tag after a failed publish. Run from main (pypi env).
   workflow_dispatch:
     inputs:
@@ -11,47 +15,71 @@ on:
         description: Existing release tag to publish (e.g. v0.1.0)
         required: true
 
-# Don't cancel: a queued run may be waiting on pypi approval.
+# Per event and ref, so a push cannot replace a queued publish.
 concurrency:
-  group: release
+  group: release-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
   contents: read
 
 jobs:
-  # Tags created with GITHUB_TOKEN trigger no workflows, so publish happens here.
+  # Also runs when the draft is published, to open the next release PR.
   release-please:
     name: release-please
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' || github.event_name == 'release'
+    concurrency:
+      group: release-please
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # release commit, tag and GitHub release
+      contents: write  # release commit and draft GitHub release
       issues: write  # release labels
       pull-requests: write  # open and update the release PR
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # release-please ignores draft releases (they have no tag). Until the draft
+      # is published it would build the next release PR from the whole history.
+      - name: Check for an unpublished draft release
+        id: pending
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Always the default branch: a release or re-run SHA can be an older commit.
+          MANIFEST_REF: ${{ github.event.repository.default_branch }}
+        run: |
+          version="$(gh api "repos/$GITHUB_REPOSITORY/contents/.release-please-manifest.json?ref=$MANIFEST_REF" \
+            --jq .content | base64 -d | jq -er '."."')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+            echo "::error::Unexpected version in .release-please-manifest.json: '$version'"
+            exit 1
+          fi
+          drafts="$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq ".[] | select(.draft and .tag_name == \"v$version\") | .id")"
+          if [[ -n "$drafts" ]]; then
+            echo "::warning::Draft release v$version is not published yet: release-please skipped"
+            echo "draft=true" >> "$GITHUB_OUTPUT"
+          fi
+      # Two calls: within one call the PR step cannot see the draft the release
+      # step just made.
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
+        if: steps.pending.outputs.draft != 'true'
         with:
-          release-type: simple
+          skip-github-pull-request: true
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        if: steps.pending.outputs.draft != 'true' && steps.release.outputs.releases_created != 'true'
+        with:
+          skip-github-release: true
 
   build:
     name: Build distribution 📦
-    needs: release-please
     runs-on: ubuntu-latest
-    if: >-
-      !cancelled() && (
-        needs.release-please.outputs.release_created == 'true' ||
-        github.event_name == 'workflow_dispatch'
-      )
+    if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         # hatch-vcs needs the tag to compute the version.
-        ref: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
+        ref: ${{ github.event.release.tag_name || inputs.tag }}
         persist-credentials: false
     - name: Set up Python
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -71,11 +99,10 @@ jobs:
         name: python-package-distributions
         path: dist/
 
+  # Only this job can get a PyPI token; the build above runs without it.
   publish:
     name: Publish distribution 📦 to PyPI
     needs: build
-    # A skipped release-please upstream would otherwise skip this job too.
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: pypi
