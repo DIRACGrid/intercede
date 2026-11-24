@@ -16,6 +16,7 @@ from intercede import registry
 from intercede.auth.providers import StaticCredentials
 from intercede.exceptions import (
     AuthenticationError,
+    InterCEdeError,
     ResourceUnavailableError,
     SpecificationRejectedError,
 )
@@ -97,6 +98,14 @@ async def test_a_resource_that_is_down(
                 await down.get_status([stored])
     finally:
         await release(backend, [handle])
+
+
+async def test_a_closed_backend(backend: JobBackend, tmp_path: Path):
+    """Closing twice is harmless, and a closed backend does no more work."""
+    await backend.__aexit__(None, None, None)
+    await backend.__aexit__(None, None, None)
+    with pytest.raises(InterCEdeError):
+        await backend.submit(SubmissionSpec(executable=script(tmp_path, "true")))
 
 
 # --------------------------------------------------------------------------

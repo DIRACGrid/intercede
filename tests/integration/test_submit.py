@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,27 @@ async def test_a_stored_handle_finds_the_job(backend: JobBackend, tmp_path: Path
         stored = JobHandle.model_validate_json(handles[0].model_dump_json())
         statuses = await backend.get_status([stored])
         assert statuses[stored] != JobStatus.UNKNOWN
+    finally:
+        await release(backend, handles)
+
+
+async def test_local_files_may_be_deleted_once_submit_returns(
+    backend: JobBackend, tmp_path: Path
+):
+    """A backend reads local files before submit returns, never later."""
+    caller = tmp_path / "caller"
+    caller.mkdir()
+    (caller / "data.txt").write_text("kept")
+    spec = SubmissionSpec(
+        executable=script(caller, '[ "$(cat data.txt)" = kept ]'),
+        inputs=[FileRef(name="data.txt", source=str(caller / "data.txt"))],
+    )
+    submission = await backend.submit(spec)
+    shutil.rmtree(caller)
+    handles = list(submission.handles.values())
+    try:
+        statuses = await wait_for(backend, handles, FINISHED)
+        assert statuses[handles[0]] == JobStatus.DONE
     finally:
         await release(backend, handles)
 
