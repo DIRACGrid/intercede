@@ -24,7 +24,7 @@ You do not need to change any CI workflow. CI finds the stack in `stacks.yml`.
 
    ```sh
    docker compose -f tests/integration/stacks/<id>/compose.yml up --wait
-   pixi run -e py313 pytest tests/integration -m "<markers>" --stack=<id> --config=basic
+   pixi run -e py313 pytest tests/integration -n 4 -m "<markers>" --stack=<id> --config=basic
    pixi run -e py313 pytest tests/integration/test_manifest.py
    ```
 
