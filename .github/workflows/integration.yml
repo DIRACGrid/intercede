@@ -10,6 +10,7 @@ on:
       - ".github/workflows/integration.yml"
       - "tests/conftest.py"
       - "pyproject.toml"
+      - "src/**"
 
 permissions:
   contents: read
@@ -77,18 +78,13 @@ jobs:
             # TODO(#13/#14): ship the suite in the image and exec as an unprivileged user.
             runner=(docker compose -f "$COMPOSE_FILE" exec -T backend pytest)
           else
-            runner=(pixi run -e py313 pytest)
+            # Independent tests, run side by side (stacks.yml `workers`).
+            runner=(pixi run -e py313 pytest -n "${{ matrix.workers }}")
           fi
-          set +e
-          "${runner[@]}" tests/integration -m "$MARKERS" \
+          # -rs --no-fold-skipped: name every skipped test and why. Every stack
+          # runs the shared suite, so a run that selects no test fails (exit 5).
+          "${runner[@]}" tests/integration -m "$MARKERS" -rs --no-fold-skipped \
             --stack="$STACK" --config="$CONFIG"
-          rc=$?
-          # Exit 5 = no tests selected; tolerated until the contract suite lands.
-          if [ "$rc" -eq 5 ]; then
-            echo "::notice::stack '$STACK': no tests matched markers '$MARKERS' (pytest exit 5) - passing until the contract suite lands"
-            rc=0
-          fi
-          exit "$rc"
 
       - name: Collect daemon logs
         if: failure()
